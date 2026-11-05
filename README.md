@@ -130,5 +130,6 @@ before production; local source/build tests alone do not certify infrastructure.
 
 ## Production
 
-See infra/DEPLOYMENT.md. The delivered scope prepares configuration/documentation;
-it does not provision Hetzner or deploy a live environment.
+For managed hosting, see [Railway deployment](infra/RAILWAY.md). For a Docker VPS,
+see [Hetzner deployment and recovery](infra/DEPLOYMENT.md). Configuration and local
+build checks do not provision hosting or certify a live production deployment.
