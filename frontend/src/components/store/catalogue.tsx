@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Search, SlidersHorizontal, RotateCcw } from "lucide-react";
+import { ArrowLeft, ArrowRight, SlidersHorizontal, RotateCcw } from "lucide-react";
 import { getCategories, getProducts } from "@/services/server-api";
 import { ProductCard } from "./product-card";
 import { Button } from "@/components/ui/button";
+import { CatalogueToolbar } from "./catalogue-toolbar";
+import { FeaturedCarousel } from "./featured-carousel";
 
 export type CatalogueParams = {
   q?: string;
@@ -11,7 +13,7 @@ export type CatalogueParams = {
   page?: string;
   featured?: string;
 };
-export async function Catalogue({ params }: { params: CatalogueParams }) {
+export async function Catalogue({ params, featuredCarousel = false }: { params: CatalogueParams; featuredCarousel?: boolean }) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value) query.set(key, value);
   let result;
@@ -31,6 +33,7 @@ export async function Catalogue({ params }: { params: CatalogueParams }) {
     );
   }
   const [products, categories] = result;
+  if (featuredCarousel) return <FeaturedCarousel products={products.items} />;
   const link = (changes: Record<string, string>) => {
     const next = new URLSearchParams(query);
     for (const [key, value] of Object.entries(changes)) {
@@ -44,7 +47,6 @@ export async function Catalogue({ params }: { params: CatalogueParams }) {
     <section className="catalogue-section" id="collection">
       <div className="section-heading">
         <div>
-          <span className="eyebrow">The edit / {new Date().getFullYear()}</span>
           <h2>{selected?.name || "The collection"}</h2>
         </div>
         <span className="muted">{products.total} pieces</span>
@@ -69,22 +71,7 @@ export async function Catalogue({ params }: { params: CatalogueParams }) {
           </div>
         </aside>
         <div className="catalogue-results">
-          <form className="catalogue-toolbar" action="/products">
-            <label className="search-field">
-              <Search size={18} />
-              <input id="catalogue-search" name="q" type="search" defaultValue={params.q || ""} placeholder="Find your next everyday piece" aria-label="Search products" />
-            </label>
-            {params.category && <input type="hidden" name="category" value={params.category} />}
-            <select name="sort" aria-label="Sort products" defaultValue={params.sort || "newest"}>
-              <option value="newest">Newest first</option>
-              <option value="name">Name: A to Z</option>
-              <option value="price-asc">Price: low to high</option>
-              <option value="price-desc">Price: high to low</option>
-            </select>
-            <Button type="submit" variant="outline" size="icon" title="Apply search and sort" aria-label="Apply search and sort">
-              <ArrowRight size={18} />
-            </Button>
-          </form>
+          <CatalogueToolbar params={params} />
           {params.q && (
             <p className="search-summary">
               Results for &ldquo;{params.q}&rdquo; <Link href={link({ q: "", page: "1" })}>Clear search</Link>

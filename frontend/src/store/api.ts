@@ -16,10 +16,13 @@ async function getCsrf() {
     });
   return csrfRequest;
 }
+
 const raw = fetchBaseQuery({ baseUrl: "/api", credentials: "same-origin" });
 let refreshRequest: Promise<boolean> | undefined;
+
 const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (args, api, extra) => {
   const input = typeof args === "string" ? { url: args } : args;
+
   async function execute(request: FetchArgs) {
     const headers = new Headers();
     if (request.headers instanceof Headers) request.headers.forEach((value, name) => headers.set(name, value));
@@ -31,6 +34,7 @@ const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
     if (!["GET", "HEAD"].includes((request.method || "GET").toUpperCase())) headers.set("x-csrf-token", await getCsrf());
     return raw({ ...request, headers }, api, extra);
   }
+
   try {
     let result = await execute(input);
     if (result.error?.status === 401 && !input.url.startsWith("/auth/login") && !input.url.startsWith("/auth/logout")) {
@@ -52,6 +56,7 @@ const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
     };
   }
 };
+
 export const catalogueApi = createApi({
   reducerPath: "catalogueApi",
   baseQuery,

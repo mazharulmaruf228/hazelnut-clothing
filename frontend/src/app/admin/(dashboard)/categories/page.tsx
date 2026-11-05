@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Pencil, Trash2, Plus, Save } from "lucide-react";
@@ -9,6 +9,10 @@ import { useCategoriesQuery, useChangeMutation } from "@/store/api";
 import { Button } from "@/components/ui/button";
 import { Confirm } from "@/components/ui/confirm";
 import { errorMessage, slugify } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const schema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -23,6 +27,7 @@ function CategoryForm({ category, categories, close }: { category?: Category; ca
   const {
     register,
     handleSubmit,
+    control,
     reset,
     setValue,
     formState: { errors },
@@ -55,43 +60,54 @@ function CategoryForm({ category, categories, close }: { category?: Category; ca
     >
       <h2>{category ? "Edit category" : "New category"}</h2>
       <div className="form-grid">
-        <label>
+        <Label>
           Name
-          <input
+          <Input
             {...register("name", {
               onChange: (event) => {
                 if (!slugEdited) setValue("slug", slugify(event.target.value));
               },
             })}
           />
-        </label>
-        <label>
+        </Label>
+        <Label>
           Slug
-          <input
+          <Input
             {...register("slug", {
               onChange: () => {
                 setSlugEdited(true);
               },
             })}
           />
-        </label>
-        <label>
+        </Label>
+        <Label>
           Parent category
-          <select {...register("parentId")}>
-            <option value="">None (top level)</option>
-            {categories
-              .filter((item) => item.id !== category?.id)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
+          <Controller
+            control={control}
+            name="parentId"
+            render={({ field }) => (
+              <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
+                <SelectTrigger aria-label="Parent category">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None (top level)</SelectItem>
+                  {categories
+                    .filter((item) => item.id !== category?.id)
+                    .map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+        </Label>
+        <Label>
           Description
-          <textarea {...register("description")} />
-        </label>
+          <Textarea {...register("description")} />
+        </Label>
       </div>
       {(error || Object.keys(errors).length > 0) && (
         <p className="status-message" role="alert">
@@ -126,7 +142,10 @@ export default function Categories() {
       </div>
       {error && (
         <div className="status-message">
-          Unable to load categories. <button onClick={refetch}>Retry</button>
+          Unable to load categories.{" "}
+          <Button variant="ghost" onClick={refetch}>
+            Retry
+          </Button>
         </div>
       )}
       <div className="table-scroll">

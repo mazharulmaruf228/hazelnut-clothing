@@ -8,6 +8,8 @@ import { KeyRound, Link2 } from "lucide-react";
 import { useChangeMutation, useMeQuery } from "@/store/api";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const schema = z.object({
   currentPassword: z.string().min(1),
@@ -62,14 +64,14 @@ export default function Account() {
       >
         <h2>Change password</h2>
         <div className="stack-form">
-          <label>
+          <Label>
             Current password
-            <input type="password" autoComplete="current-password" {...register("currentPassword")} />
-          </label>
-          <label>
+            <Input type="password" autoComplete="current-password" {...register("currentPassword")} />
+          </Label>
+          <Label>
             New password
-            <input type="password" autoComplete="new-password" {...register("password")} />
-          </label>
+            <Input type="password" autoComplete="new-password" {...register("password")} />
+          </Label>
           {(error || Object.keys(errors).length > 0) && (
             <p className="status-message" role="alert">
               {error || "Use a new password of at least 6 characters."}

@@ -4,6 +4,9 @@ import { useState } from "react";
 import { Plus, Search, Pencil, Trash2, ArrowLeft, ArrowRight } from "lucide-react";
 import { useProductsQuery, useChangeMutation } from "@/store/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Confirm } from "@/components/ui/confirm";
 import { money } from "@/lib/utils";
 
@@ -39,27 +42,33 @@ export default function Products() {
           event.preventDefault();
           const values = new FormData(event.currentTarget);
           setQuery(String(values.get("q") || ""));
-          setStatus(String(values.get("status") || ""));
+          const selectedStatus = String(values.get("status") || "");
+          setStatus(selectedStatus === "all" ? "" : selectedStatus);
           setPage(1);
         }}
       >
-        <label className="search-field">
+          <Label className="search-field">
           <Search size={17} />
-          <input name="q" placeholder="Search name or SKU" aria-label="Search products" />
-        </label>
-        <select name="status" aria-label="Status">
-          <option value="">All statuses</option>
-          <option>DRAFT</option>
-          <option>PUBLISHED</option>
-          <option>ARCHIVED</option>
-        </select>
+            <Input name="q" placeholder="Search name or SKU" aria-label="Search products" />
+          </Label>
+        <Select name="status" defaultValue="all">
+          <SelectTrigger aria-label="Status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="DRAFT">DRAFT</SelectItem>
+            <SelectItem value="PUBLISHED">PUBLISHED</SelectItem>
+            <SelectItem value="ARCHIVED">ARCHIVED</SelectItem>
+          </SelectContent>
+        </Select>
         <Button variant="outline" type="submit">
           Filter
         </Button>
       </form>
       {error && (
         <div className="status-message">
-          Unable to load products. <button onClick={refetch}>Retry</button>
+          Unable to load products. <Button variant="ghost" onClick={refetch}>Retry</Button>
         </div>
       )}
       <div className="table-scroll" aria-busy={isFetching}>

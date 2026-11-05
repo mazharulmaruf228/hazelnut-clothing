@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const url = new URL(process.env.TEST_DATABASE_URL || "postgresql://catalogue:change-me@127.0.0.1:55432/catalogue_test?schema=public");
+const url = new URL(process.env.TEST_DATABASE_URL || "postgresql://catalogue:change-me@127.0.0.1:5432/catalogue_test?schema=public");
 if (!url.pathname.endsWith("_test")) throw new Error("Restore smoke tests require a dedicated _test source database");
 const name = `catalogue_${Date.now()}_restore`;
 const source = new PrismaClient({

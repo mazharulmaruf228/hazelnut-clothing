@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Plus, Pencil, Trash2, Check, Save, X } from "lucide-react";
@@ -8,6 +8,9 @@ import { useChangeMutation } from "@/store/api";
 import type { Product, Variant } from "@/schemas/api";
 import { Button } from "@/components/ui/button";
 import { Confirm } from "@/components/ui/confirm";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { errorMessage, money } from "@/lib/utils";
 
 const schema = z.object({
@@ -76,38 +79,40 @@ function VariantForm({ product, variant, close }: { product: Product; variant?: 
         </Button>
       </div>
       <div className="form-grid">
-        <label>
+        <Label>
           Name
-          <input {...register("name")} />
-        </label>
-        <label>
+          <Input {...register("name")} />
+        </Label>
+        <Label>
           SKU
-          <input {...register("sku")} />
-        </label>
-        <label>
+          <Input {...register("sku")} />
+        </Label>
+        <Label>
           Price override (BDT)
-          <input placeholder={`Inherit ${product.price}`} inputMode="decimal" {...register("price")} />
-        </label>
+          <Input placeholder={`Inherit ${product.price}`} inputMode="decimal" {...register("price")} />
+        </Label>
         <div className="checkbox-group">
-          <label className="checkbox-label">
-            <input type="checkbox" {...register("isDefault")} disabled={variant?.isDefault} /> Default
-          </label>
-          <label className="checkbox-label">
-            <input type="checkbox" {...register("isActive")} disabled={variant?.isDefault} /> Active
-          </label>
+          <Label className="checkbox-label">
+            <Controller control={control} name="isDefault" render={({ field }) => <Checkbox id="variant-default" checked={field.value} onCheckedChange={field.onChange} onBlur={field.onBlur} disabled={variant?.isDefault} ref={field.ref} />} />
+            <span>Default</span>
+          </Label>
+          <Label className="checkbox-label">
+            <Controller control={control} name="isActive" render={({ field }) => <Checkbox id="variant-active" checked={field.value} onCheckedChange={field.onChange} onBlur={field.onBlur} disabled={variant?.isDefault} ref={field.ref} />} />
+            <span>Active</span>
+          </Label>
         </div>
       </div>
       <div className="attribute-list">
         {fields.map((field, index) => (
           <div key={field.id} className="attribute-row">
-            <label>
+            <Label>
               Attribute
-              <input placeholder="size" {...register(`attributes.${index}.key`)} />
-            </label>
-            <label>
+              <Input placeholder="size" {...register(`attributes.${index}.key`)} />
+            </Label>
+            <Label>
               Value
-              <input placeholder="M" {...register(`attributes.${index}.value`)} />
-            </label>
+              <Input placeholder="M" {...register(`attributes.${index}.value`)} />
+            </Label>
             <Button type="button" variant="ghost" size="icon" aria-label="Remove attribute" onClick={() => remove(index)}>
               <Trash2 size={15} />
             </Button>

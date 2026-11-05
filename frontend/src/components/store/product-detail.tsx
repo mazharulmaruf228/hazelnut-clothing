@@ -3,11 +3,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowLeft, Expand, X, Check } from "lucide-react";
 import type { Product, ProductImage } from "@/schemas/api";
 import { money } from "@/lib/utils";
 import { ColorSwatch } from "./color-swatch";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 function Gallery({ images, name }: { images: ProductImage[]; name: string }) {
   const [index, setIndex] = useState(0);
@@ -15,30 +16,27 @@ function Gallery({ images, name }: { images: ProductImage[]; name: string }) {
   if (!image) return <div className="gallery-placeholder">{name}</div>;
   return (
     <div className="gallery">
-      <Dialog.Root>
-        <Dialog.Trigger className="gallery-main" title="Enlarge product image">
+      <Dialog>
+        <DialogTrigger className="gallery-main" title="Enlarge product image" aria-label="Enlarge product image">
           <Image src={image.imageUrl} alt={image.alt || name} fill sizes="(max-width: 760px) 100vw, 55vw" loading="eager" fetchPriority="high" />
           <span className="zoom-hint">
             <Expand size={18} />
           </span>
-        </Dialog.Trigger>
-        <Dialog.Portal>
-          <Dialog.Overlay className="dialog-overlay" />
-          <Dialog.Content className="image-dialog">
-            <Dialog.Title className="sr-only">{name}</Dialog.Title>
-            <Dialog.Description className="sr-only">Enlarged product photograph</Dialog.Description>
+        </DialogTrigger>
+        <DialogContent className="image-dialog" showCloseButton={false}>
+            <DialogTitle className="sr-only">{name}</DialogTitle>
+            <DialogDescription className="sr-only">Enlarged product photograph</DialogDescription>
             <Image src={image.imageUrl} alt={image.alt || name} fill sizes="90vw" style={{ objectFit: "contain" }} />
-            <Dialog.Close className="dialog-close" aria-label="Close image">
+            <DialogClose className="dialog-close" aria-label="Close image">
               <X size={22} />
-            </Dialog.Close>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+            </DialogClose>
+        </DialogContent>
+      </Dialog>
       <div className="gallery-thumbnails">
         {images.map((item, position) => (
-          <button key={item.id} onClick={() => setIndex(position)} aria-label={`View image ${position + 1}`} aria-pressed={index === position}>
+          <Button key={item.id} type="button" variant="ghost" onClick={() => setIndex(position)} aria-label={`View image ${position + 1}`} aria-pressed={index === position}>
             <Image src={item.imageUrl} alt={item.alt || name} fill sizes="76px" />
-          </button>
+          </Button>
         ))}
       </div>
     </div>
@@ -92,11 +90,11 @@ export function ProductDetail({ product, initialVariant }: { product: Product; i
                 </legend>
                 <div className="variant-options">
                   {[...new Set(active.map((variant) => variant.attributes[key]).filter(Boolean))].map((value) => (
-                    <button key={value} type="button" className={selected.attributes[key] === value ? "selected" : ""} aria-pressed={selected.attributes[key] === value} onClick={() => choose(key, value)}>
+                    <Button key={value} type="button" variant="ghost" className={selected.attributes[key] === value ? "selected" : ""} aria-pressed={selected.attributes[key] === value} onClick={() => choose(key, value)}>
                       {key.toLowerCase() === "color" && <ColorSwatch value={value} />}
                       {value}
                       {selected.attributes[key] === value && <Check size={13} />}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </fieldset>
