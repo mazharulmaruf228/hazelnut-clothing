@@ -95,6 +95,43 @@ test("featured carousel respects reduced motion and supports keyboard navigation
   await next.press("Enter");
   await expect(page.locator('.featured-carousel-slide[aria-hidden="false"]')).not.toHaveAttribute("aria-label", initialSlide || "");
 });
+test("story image fold reverses with scroll and stays open for reduced motion", async ({ page }) => {
+  await page.goto("/");
+  const image = page.locator(".story-image");
+  const panels = page.locator(".story-fold-panels");
+  await expect(image).toBeVisible();
+  await image.locator("img").evaluate((element) => (element as HTMLImageElement).decode());
+
+  const supportsScrollTimeline = await page.evaluate(() => CSS.supports("view-timeline-name", "--story-section") && CSS.supports("animation-range", "entry 0% exit 100%"));
+  if (supportsScrollTimeline) {
+    await page.evaluate(() => {
+      document.documentElement.style.scrollBehavior = "auto";
+      window.scrollTo(0, 0);
+    });
+    const leftPanel = page.locator(".story-fold-left");
+    const readPanelState = () => leftPanel.evaluate((element) => ({
+      transform: getComputedStyle(element).transform,
+      opacity: getComputedStyle(element).opacity,
+    }));
+    const foldedAtStart = await readPanelState();
+    await image.scrollIntoViewIfNeeded();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    await expect.poll(async () => (await readPanelState()).transform).not.toBe(foldedAtStart.transform);
+    const revealing = await readPanelState();
+    expect(revealing.transform).not.toBe(foldedAtStart.transform);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(async () => (await readPanelState()).opacity).toBe("0");
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(async () => (await readPanelState()).transform).toBe(foldedAtStart.transform);
+    await expect(panels).toHaveCSS("display", "block");
+  } else {
+    await expect(panels).toHaveCSS("display", "none");
+  }
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(panels).toHaveCSS("display", "none");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
 test("admin creates a category, draft and dynamic variant", async ({ page }, testInfo) => {
   await login(page);
   const suffix = testInfo.project.name;

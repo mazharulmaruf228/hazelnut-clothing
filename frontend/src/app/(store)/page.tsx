@@ -26,6 +26,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Cat
         <div className="story-inner">
           <div className="story-image">
             <Image src="https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=1400&q=85" alt="Carefully arranged everyday clothing in a wardrobe" fill sizes="(max-width: 700px) 90vw, 52vw" loading="lazy" />
+            <div className="story-fold-panels" aria-hidden="true">
+              <span className="story-fold-panel story-fold-left" />
+              <span className="story-fold-panel story-fold-right" />
+            </div>
             <span className="story-image-note glass">A wardrobe, considered.</span>
           </div>
           <div className="story-copy">
