@@ -1,0 +1,7 @@
+CREATE TABLE "AssetDeletion" (
+  "publicId" TEXT NOT NULL,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
+  "nextAttemptAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "AssetDeletion_pkey" PRIMARY KEY ("publicId")
+);

@@ -1,0 +1,75 @@
+name: Deploy to Hetzner
+on:
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: Public HTTPS site URL (must match the server DOMAIN)
+        required: true
+      store_name:
+        description: Store name
+        default: Hazelnut
+        required: true
+permissions:
+  contents: read
+  packages: write
+  actions: read
+concurrency:
+  group: catalogue-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful CI for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --json conclusion,status --jq 'any(.[]; .status == "completed" and .conclusion == "success")')
+          test "$passed" = true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image references
+        id: images
+        env: { REPOSITORY: "${{ github.repository }}" }
+        run: |
+          echo "api=ghcr.io/${REPOSITORY,,}-api:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "web=ghcr.io/${REPOSITORY,,}-web:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.images.outputs.api }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.images.outputs.web }}
+          build-args: |
+            NEXT_PUBLIC_SITE_URL=${{ inputs.site_url }}
+            NEXT_PUBLIC_STORE_NAME=${{ inputs.store_name }}
+      - name: Configure pinned SSH connection
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Deploy prepared release
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+          USER: ${{ secrets.SSH_USER }}
+          API_IMAGE: ${{ steps.images.outputs.api }}
+          WEB_IMAGE: ${{ steps.images.outputs.web }}
+        run: |
+          ssh "$USER@$HOST" 'test -f /opt/catalogue/.env'
+          scp compose.yaml "$USER@$HOST:/opt/catalogue/compose.yaml"
+          scp -r infra "$USER@$HOST:/opt/catalogue/"
+          ssh "$USER@$HOST" "cd /opt/catalogue && API_IMAGE='$API_IMAGE' WEB_IMAGE='$WEB_IMAGE' sh infra/deploy.sh"

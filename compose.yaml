@@ -1,0 +1,146 @@
+name: catalogue
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-api-env: &api-env
+  NODE_ENV: production
+  PORT: "4000"
+  DATABASE_URL: postgresql://catalogue:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/catalogue?schema=public
+  PUBLIC_ORIGIN: https://${DOMAIN:?Set DOMAIN}
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  GOOGLE_REDIRECT_URI: https://${DOMAIN}/api/auth/google/callback
+  CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+  CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+  CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+
+services:
+  postgres:
+    image: postgres:18-bookworm
+    environment:
+      POSTGRES_DB: catalogue
+      POSTGRES_USER: catalogue
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    networks: [database]
+    restart: unless-stopped
+    shm_size: 256mb
+    mem_limit: 1g
+    logging: *logging
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U catalogue -d catalogue"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  migrate:
+    image: ${API_IMAGE:-catalogue-api:local}
+    build: ./backend
+    command: [node, node_modules/prisma/build/index.js, migrate, deploy]
+    environment: *api-env
+    networks: [database]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    logging: *logging
+  api:
+    image: ${API_IMAGE:-catalogue-api:local}
+    build: ./backend
+    environment: *api-env
+    networks: [database, application]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+    init: true
+    mem_limit: 768m
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *logging
+  web:
+    image: ${WEB_IMAGE:-catalogue-web:local}
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_SITE_URL: https://${DOMAIN}
+        NEXT_PUBLIC_STORE_NAME: ${STORE_NAME:-Hazelnut}
+    environment:
+      API_INTERNAL_URL: http://api:4000
+      NEXT_PUBLIC_SITE_URL: https://${DOMAIN}
+    networks: [application]
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+    init: true
+    mem_limit: 768m
+    tmpfs: [/tmp, "/app/.next/cache:uid=1000,gid=1000"]
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *logging
+  caddy:
+    image: caddy:2.10-alpine
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [application]
+    depends_on:
+      web: { condition: service_healthy }
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
+  backup:
+    build: ./infra/backup
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: catalogue
+      PGUSER: catalogue
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_BUCKET: ${BACKUP_BUCKET:?Set BACKUP_BUCKET}
+      BACKUP_PREFIX: ${BACKUP_PREFIX:-catalogue/database}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      AGE_RECIPIENT: ${AGE_RECIPIENT:?Set AGE_RECIPIENT}
+      RCLONE_CONFIG_BACKUP_TYPE: s3
+      RCLONE_CONFIG_BACKUP_PROVIDER: Other
+      RCLONE_CONFIG_BACKUP_ENDPOINT: ${S3_ENDPOINT:?Set S3_ENDPOINT}
+      RCLONE_CONFIG_BACKUP_REGION: ${S3_REGION:-auto}
+      RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID}
+      RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY}
+      RCLONE_CONFIG_BACKUP_FORCE_PATH_STYLE: "true"
+      BACKUP_ALERT_URL: ${BACKUP_ALERT_URL:-}
+      TZ: UTC
+    volumes: [backup_state:/state]
+    networks: [database, backup_egress]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *logging
+    healthcheck:
+      test: [CMD-SHELL, "test -f /state/last-success && test $$(($$(date +%s) - $$(cat /state/last-success))) -lt 93600"]
+      interval: 1h
+      timeout: 5s
+      start_period: 5m
+      retries: 1
+
+networks:
+  database: { internal: true }
+  application:
+  backup_egress:
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+  backup_state:

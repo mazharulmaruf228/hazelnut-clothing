@@ -1,0 +1,435 @@
+openapi: 3.1.0
+security: []
+info:
+  title: Clothing Catalogue API
+  version: 1.0.0
+  description: >-
+    Express owns persistence. Public endpoints return only published products and
+    active variants. Amounts are decimal strings in BDT. ADMIN and EDITOR may
+    manage catalogue content; only ADMIN manages users. Cookie-authenticated
+    mutations require an exact trusted Origin and x-csrf-token from GET /auth/csrf.
+servers:
+  - url: /api
+tags:
+  - name: Public
+  - name: Authentication
+  - name: Catalogue management
+  - name: Users
+paths:
+  /health:
+    get:
+      summary: Process liveness
+      responses:
+        "200": { description: Process is listening }
+  /ready:
+    get:
+      summary: PostgreSQL readiness
+      responses:
+        "200": { description: PostgreSQL query succeeded }
+        "500": { $ref: "#/components/responses/Error" }
+  /products:
+    get:
+      tags: [Public]
+      summary: Published product catalogue, including descendant category matches
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 120 } }
+        - { name: category, in: query, description: Category slug, schema: { type: string } }
+        - { name: featured, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 12 } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, name, price-asc, price-desc], default: newest } }
+      responses:
+        "200": { description: Paginated public products, content: { application/json: { schema: { $ref: "#/components/schemas/ProductList" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+  /products/{slug}:
+    get:
+      tags: [Public]
+      summary: Published product detail; drafts and archives are indistinguishable from missing products
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Product with active variants and visible images, content: { application/json: { schema: { $ref: "#/components/schemas/Product" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /categories:
+    get:
+      tags: [Public]
+      summary: Categories with published products or published descendants
+      responses:
+        "200": { description: Category items, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Category" } } } } } } }
+  /auth/csrf:
+    get:
+      tags: [Authentication]
+      summary: Issue an HttpOnly CSRF cookie and matching response token
+      responses:
+        "200": { description: Send token as x-csrf-token on mutations, content: { application/json: { schema: { type: object, properties: { token: { type: string } } } } } }
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Password login for approved active admin accounts
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string, maxLength: 200 } } }
+      responses:
+        "200": { description: User and HttpOnly access/refresh cookies }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Rotate refresh session; reuse revokes the whole token family
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      responses:
+        "200": { description: Updated access/refresh cookies and user }
+        "401": { $ref: "#/components/responses/Error" }
+  /auth/logout:
+    post:
+      summary: Revoke refresh session and clear cookies
+      tags: [Authentication]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      responses:
+        "200": { description: Session revoked and cookies cleared }
+  /auth/me:
+    get:
+      summary: Get the authenticated user
+      tags: [Authentication]
+      security: [{ adminCookie: [] }]
+      responses:
+        "200": { description: Current approved active user }
+        "401": { $ref: "#/components/responses/Error" }
+  /auth/password:
+    post:
+      summary: Change own password and revoke sessions
+      tags: [Authentication]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [currentPassword, password], properties: { currentPassword: { type: string }, password: { type: string, minLength: 6, maxLength: 200 } } }
+      responses:
+        "200": { description: Password changed; all user sessions revoked }
+  /auth/google:
+    get:
+      tags: [Authentication]
+      summary: Begin state/nonce/PKCE Google sign-in
+      responses:
+        "302": { description: Google authorization URL or configured unavailable page }
+  /auth/google/link:
+    get:
+      tags: [Authentication]
+      security: [{ adminCookie: [] }]
+      summary: Begin authenticated identity linking, never email-only auto-linking
+      responses:
+        "302": { description: Google authorization URL }
+  /auth/google/callback:
+    get:
+      summary: Validate Google identity and complete sign-in or linking
+      tags: [Authentication]
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+      responses:
+        "302": { description: "Dashboard, pending approval, linked account or safe failure page" }
+  /admin/overview:
+    get:
+      summary: Get catalogue overview counts
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      responses:
+        "200": { description: Product/status/category counts; pending users only for ADMIN }
+  /admin/products:
+    get:
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      summary: All statuses; same pagination/search/category/sort as public listing
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] } }
+        - { name: q, in: query, schema: { type: string, maxLength: 120 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200": { description: Paginated admin products, content: { application/json: { schema: { $ref: "#/components/schemas/ProductList" } } } }
+    post:
+      summary: Create product with default variant
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/ProductInput" }
+                - { type: object, required: [defaultVariant], properties: { defaultVariant: { $ref: "#/components/schemas/VariantInput" } } }
+      responses:
+        "201": { description: Draft created with an active default variant }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/products/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      summary: Get an admin product aggregate
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      responses:
+        "200": { description: Admin product aggregate, content: { application/json: { schema: { $ref: "#/components/schemas/Product" } } } }
+    patch:
+      summary: Update product fields or publishing state
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      description: Supply only changed ProductInput fields. Omitted values remain unchanged. Publishing requires usable imagery and one active default variant.
+      requestBody: { content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Updated product }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete product and queue media cleanup
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      responses:
+        "204": { description: Product removed; managed media deletion queued durably }
+  /admin/products/{id}/variants:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      summary: Add a dynamic variant
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/VariantInput" } } } }
+      responses:
+        "201": { description: Updated aggregate with new variant }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/variants/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      summary: Update variant or reassign default
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      description: Partial VariantInput. Setting isDefault reassigns it transactionally.
+      requestBody: { content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Updated aggregate }
+    delete:
+      summary: Delete a non-default variant
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      responses:
+        "200": { description: Updated aggregate; default deletion blocked }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/categories:
+    get:
+      summary: List all admin categories
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      responses:
+        "200": { description: All categories with direct product counts }
+    post:
+      summary: Create category
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CategoryInput" } } } }
+      responses:
+        "201": { description: Category created }
+  /admin/categories/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      summary: Update or reparent category
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      description: Partial CategoryInput; parent cycles rejected.
+      requestBody: { content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Category updated }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete an unreferenced category
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      responses:
+        "204": { description: Empty category removed }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/uploads:
+    post:
+      summary: Upload validated product photographs
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [productId, images]
+              properties:
+                productId: { type: string, format: uuid }
+                variantId: { type: string, format: uuid }
+                alt: { type: string, maxLength: 300 }
+                images: { type: array, minItems: 1, maxItems: 8, items: { type: string, format: binary } }
+      responses:
+        "201": { description: Uploaded image items }
+        "400": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/products/{id}/images/order:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      summary: Atomically reorder all owned product images
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [imageIds], properties: { imageIds: { type: array, maxItems: 100, uniqueItems: true, items: { type: string, format: uuid } } } }
+      responses:
+        "200": { description: Complete image order persisted transactionally }
+        "409": { description: Image list changed or includes another product's image }
+  /admin/images/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      summary: Edit alt text, image order or variant assignment
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { alt: { type: string, maxLength: 300 }, sortOrder: { type: integer, minimum: 0 }, variantId: { type: [string, "null"], format: uuid } } }
+      responses:
+        "200": { description: Image updated; variant must belong to same product }
+    delete:
+      summary: Delete image and queue provider cleanup
+      tags: [Catalogue management]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      responses:
+        "204": { description: Image removed; provider cleanup queued }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/users:
+    get:
+      summary: List admin users
+      tags: [Users]
+      security: [{ adminCookie: [] }]
+      description: ADMIN only. Never returns password hashes or sessions.
+      responses:
+        "200": { description: User items }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create approved admin user
+      tags: [Users]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name, email, password], properties: { name: { type: string, maxLength: 120 }, email: { type: string, format: email }, password: { type: string, minLength: 6, maxLength: 200 }, role: { type: string, enum: [ADMIN, EDITOR], default: EDITOR } } }
+      responses:
+        "201": { description: Active approved user created by ADMIN }
+  /admin/users/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      summary: Edit, approve or disable an admin user
+      tags: [Users]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      description: ADMIN only. Updates revoke sessions. Last active ADMIN is protected.
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string }, email: { type: string, format: email }, role: { type: string, enum: [ADMIN, EDITOR] }, isActive: { type: boolean }, approve: { type: boolean }, password: { type: string, minLength: 6, maxLength: 200 } } }
+      responses:
+        "200": { description: Updated user }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete user or reject pending signup
+      tags: [Users]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      responses:
+        "204": { description: ADMIN-only deletion or pending-signup rejection }
+        "409": { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    adminCookie: { type: apiKey, in: cookie, name: access, description: Short-lived JWT; refresh is an independently rotated HttpOnly cookie }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    Csrf: { name: x-csrf-token, in: header, required: true, schema: { type: string }, description: Must match CSRF cookie; exact trusted Origin also required }
+  responses:
+    Error:
+      description: Validated error. Common statuses are 400, 401, 403, 404, 409, 413, 429 and 500.
+      content:
+        application/json:
+          schema: { type: object, properties: { error: { type: object, properties: { message: { type: string }, requestId: { type: string }, fields: { type: object } } } } }
+  schemas:
+    Money: { type: string, pattern: '^\d{1,10}(\.\d{1,2})?$', example: "1890.00" }
+    CategoryInput:
+      type: object
+      required: [name, slug]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        slug: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+        description: { type: string, maxLength: 2000 }
+        parentId: { type: [string, "null"], format: uuid }
+    Category:
+      allOf:
+        - { $ref: "#/components/schemas/CategoryInput" }
+        - { type: object, required: [id], properties: { id: { type: string, format: uuid } } }
+    ProductInput:
+      type: object
+      required: [name, slug, description, categoryId, price]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        slug: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+        description: { type: string, minLength: 1, maxLength: 20000 }
+        categoryId: { type: string, format: uuid }
+        price: { $ref: "#/components/schemas/Money" }
+        discountPercentage: { type: string, description: Decimal between 0 and 100 inclusive }
+        featured: { type: boolean }
+        status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
+    VariantInput:
+      type: object
+      required: [name, sku]
+      properties:
+        name: { type: string, maxLength: 160 }
+        sku: { type: string, maxLength: 80, description: "Globally unique, normalized to uppercase" }
+        price: { anyOf: [{ $ref: "#/components/schemas/Money" }, { type: "null" }], description: Null inherits product base price }
+        attributes: { type: object, maxProperties: 20, additionalProperties: { type: string, minLength: 1, maxLength: 100 } }
+        isDefault: { type: boolean }
+        isActive: { type: boolean }
+    Product:
+      allOf:
+        - { $ref: "#/components/schemas/ProductInput" }
+        - type: object
+          required: [id, category, variants, images, fromPrice, hasPriceRange, currency]
+          properties:
+            id: { type: string, format: uuid }
+            category: { $ref: "#/components/schemas/Category" }
+            currency: { type: string, const: BDT }
+            fromPrice: { $ref: "#/components/schemas/Money" }
+            hasPriceRange: { type: boolean }
+            variants: { type: array, items: { allOf: [{ $ref: "#/components/schemas/VariantInput" }, { type: object, properties: { id: { type: string }, effectivePrice: { $ref: "#/components/schemas/Money" } } }] } }
+            images: { type: array, items: { type: object, properties: { id: { type: string }, imageUrl: { type: string, format: uri }, alt: { type: string }, sortOrder: { type: integer }, variantId: { type: [string, "null"] } } } }
+    ProductList:
+      type: object
+      required: [items, total, page, pageSize, totalPages]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Product" } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalPages: { type: integer }

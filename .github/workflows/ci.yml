@@ -1,0 +1,93 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env: { POSTGRES_USER: catalogue, POSTGRES_PASSWORD: ci-only-password, POSTGRES_DB: catalogue_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U catalogue -d catalogue_test" --health-interval 5s --health-timeout 5s --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgresql://catalogue:ci-only-password@localhost:5432/catalogue_test?schema=public
+    defaults:
+      run: { working-directory: backend }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: backend/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: frontend }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+  browser:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env: { POSTGRES_USER: catalogue, POSTGRES_PASSWORD: ci-only-password, POSTGRES_DB: catalogue_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U catalogue -d catalogue_test" --health-interval 5s --health-timeout 5s --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgresql://catalogue:ci-only-password@localhost:5432/catalogue_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+        working-directory: backend
+      - run: npm run db:generate
+        working-directory: backend
+      - run: npm run test:prepare-e2e
+        working-directory: backend
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run test:e2e
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: browser-report, path: "frontend/playwright-report/", retention-days: 7 }
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t catalogue-api:ci ./backend
+      - run: docker build --build-arg NEXT_PUBLIC_SITE_URL=https://catalogue.example.com -t catalogue-web:ci ./frontend
+      - run: docker build -t catalogue-backup:ci ./infra/backup
+      - name: Validate compose
+        env:
+          DOMAIN: catalogue.example.com
+          ACME_EMAIL: ci@example.com
+          POSTGRES_PASSWORD: ci-only-password
+          JWT_SECRET: ci-only-jwt-secret-at-least-32-characters
+          BACKUP_BUCKET: ci-backup
+          AGE_RECIPIENT: ci-placeholder
+          S3_ENDPOINT: https://s3.example.com
+          S3_ACCESS_KEY_ID: ci-placeholder
+          S3_SECRET_ACCESS_KEY: ci-placeholder
+        run: docker compose config --quiet
+      - name: Shell syntax
+        run: sh -n infra/backup/backup.sh && sh -n infra/backup/restore.sh && sh -n infra/backup/start.sh && sh -n infra/deploy.sh
