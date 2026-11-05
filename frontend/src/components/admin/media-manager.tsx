@@ -7,12 +7,16 @@ import { useUploadMutation, useChangeMutation } from "@/store/api";
 import { Button } from "@/components/ui/button";
 import { Confirm } from "@/components/ui/confirm";
 import { errorMessage } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export function MediaManager({ product }: { product: Product }) {
   const [upload, { isLoading }] = useUploadMutation();
   const [change] = useChangeMutation();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [uploadVariantId, setUploadVariantId] = useState("");
   async function edit(id: string, body: unknown) {
     setError("");
     try {
@@ -62,31 +66,38 @@ export function MediaManager({ product }: { product: Product }) {
           try {
             await upload(data).unwrap();
             form.reset();
+            setUploadVariantId("");
           } catch (error) {
             setError(errorMessage(error));
           }
         }}
       >
-        <label>
+        <Label>
           Product photographs
           <input type="file" name="images" accept="image/jpeg,image/png,image/webp,image/avif" multiple required />
-        </label>
+        </Label>
         <div className="form-grid">
-          <label>
+          <Label>
             Assign to
-            <select name="variantId">
-              <option value="">All variants</option>
-              {product.variants.map((variant) => (
-                <option key={variant.id} value={variant.id}>
-                  {variant.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
+            <Select value={uploadVariantId || "all"} onValueChange={(value) => setUploadVariantId(value === "all" ? "" : value)}>
+              <SelectTrigger aria-label="Assign to variant">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All variants</SelectItem>
+                {product.variants.map((variant) => (
+                  <SelectItem key={variant.id} value={variant.id}>
+                    {variant.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input type="hidden" name="variantId" value={uploadVariantId} />
+          </Label>
+          <Label>
             Alt text
-            <input name="alt" maxLength={300} />
-          </label>
+            <Input name="alt" maxLength={300} />
+          </Label>
         </div>
         <Button disabled={isLoading}>
           <Upload size={15} />
@@ -104,27 +115,32 @@ export function MediaManager({ product }: { product: Product }) {
             <div className="media-preview">
               <Image src={image.imageUrl} alt={image.alt || product.name} fill sizes="72px" />
             </div>
-            <label>
+            <Label>
               Alt text
-              <input
+              <Input
                 key={image.alt}
                 defaultValue={image.alt}
                 onBlur={(event) => {
                   if (event.target.value !== image.alt) void edit(image.id, { alt: event.target.value });
                 }}
               />
-            </label>
-            <label>
+            </Label>
+            <Label>
               Variant
-              <select value={image.variantId || ""} onChange={(event) => void edit(image.id, { variantId: event.target.value || null })}>
-                <option value="">All variants</option>
-                {product.variants.map((variant) => (
-                  <option key={variant.id} value={variant.id}>
-                    {variant.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <Select value={image.variantId || "all"} onValueChange={(value) => void edit(image.id, { variantId: value === "all" ? null : value })}>
+                <SelectTrigger aria-label={`Variant for image ${index + 1}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All variants</SelectItem>
+                  {product.variants.map((variant) => (
+                    <SelectItem key={variant.id} value={variant.id}>
+                      {variant.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Label>
             <div className="row-actions">
               <Button variant="ghost" size="icon" disabled={index === 0 || busy} title="Move image up" aria-label="Move image up" onClick={() => void reorder(index, -1)}>
                 <ArrowUp size={15} />

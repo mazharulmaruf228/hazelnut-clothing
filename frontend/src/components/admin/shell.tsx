@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { LayoutDashboard, Package, FolderTree, Users, LogOut, ArrowUpRight, Settings } from "lucide-react";
 import { useMeQuery, useLogoutMutation, catalogueApi } from "@/store/api";
 import { useDispatch } from "react-redux";
 import { Button } from "@/components/ui/button";
 import { storeName } from "@/lib/site";
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const { data, isLoading, error, refetch } = useMeQuery();
@@ -14,6 +15,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const dispatch = useDispatch();
+  const [logoutError, setLogoutError] = useState(false);
   const unauthorized = error && "status" in error && error.status === 401;
   useEffect(() => {
     if (unauthorized) router.replace("/admin/login");
@@ -78,7 +80,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   dispatch(catalogueApi.util.resetApiState());
                   router.replace("/admin/login");
                 } catch {
-                  window.alert("Sign out failed. Please try again.");
+                  setLogoutError(true);
                 }
               }}
             >
@@ -88,6 +90,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </header>
         <main className="admin-content">{children}</main>
       </div>
+      <AlertDialog open={logoutError} onOpenChange={setLogoutError}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Sign out failed</AlertDialogTitle>
+          <AlertDialogDescription>Please try signing out again.</AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogAction asChild>
+              <Button>Close</Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

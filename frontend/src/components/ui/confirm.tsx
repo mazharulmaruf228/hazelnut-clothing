@@ -1,7 +1,7 @@
 "use client";
-import * as Dialog from "@radix-ui/react-dialog";
 import { useState } from "react";
 import { Button } from "./button";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "./dialog";
 import { errorMessage } from "@/lib/utils";
 
 export function Confirm({ trigger, title, description, onConfirm }: { trigger: React.ReactNode; title: string; description: string; onConfirm: () => Promise<unknown> }) {
@@ -21,7 +21,7 @@ export function Confirm({ trigger, title, description, onConfirm }: { trigger: R
     }
   }
   return (
-    <Dialog.Root
+    <Dialog
       open={open}
       onOpenChange={(value) => {
         if (!busy) {
@@ -30,29 +30,26 @@ export function Confirm({ trigger, title, description, onConfirm }: { trigger: R
         }
       }}
     >
-      <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="confirm-dialog">
-          <Dialog.Title>{title}</Dialog.Title>
-          <Dialog.Description>{description}</Dialog.Description>
-          {error && (
-            <p className="status-message" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="form-actions">
-            <Dialog.Close asChild>
-              <Button variant="outline" disabled={busy}>
-                Cancel
-              </Button>
-            </Dialog.Close>
-            <Button variant="destructive" onClick={confirm} disabled={busy}>
-              {busy ? "Working..." : "Confirm"}
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent className="confirm-dialog">
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
+        {error && (
+          <p className="status-message" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="form-actions">
+          <DialogClose asChild>
+            <Button variant="outline" disabled={busy}>
+              Cancel
             </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          </DialogClose>
+          <Button variant="destructive" onClick={confirm} disabled={busy}>
+            {busy ? "Working..." : "Confirm"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

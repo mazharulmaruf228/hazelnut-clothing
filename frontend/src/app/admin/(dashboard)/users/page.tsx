@@ -1,16 +1,19 @@
 "use client";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import * as Dialog from "@radix-ui/react-dialog";
-import { Plus, Check, KeyRound, UserRoundPlus, X } from "lucide-react";
+import { Plus, Check, KeyRound, UserRoundPlus } from "lucide-react";
 import { useMeQuery, useUsersQuery, useChangeMutation } from "@/store/api";
 import type { AdminUser } from "@/schemas/api";
 import { Button } from "@/components/ui/button";
 import { Confirm } from "@/components/ui/confirm";
 import { errorMessage } from "@/lib/utils";
 import { UserEditor } from "@/components/admin/user-editor";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 const schema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -26,17 +29,15 @@ function PasswordReset({ user }: { user: AdminUser }) {
   return (
     <>
       <UserEditor user={user} self={session?.user.id === user.id} />
-      <Dialog.Root open={open} onOpenChange={setOpen}>
-        <Dialog.Trigger asChild>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
           <Button variant="ghost" size="icon" aria-label={`Reset password for ${user.name}`} title="Reset password">
             <KeyRound size={15} />
           </Button>
-        </Dialog.Trigger>
-        <Dialog.Portal>
-          <Dialog.Overlay className="dialog-overlay" />
-          <Dialog.Content className="confirm-dialog">
-            <Dialog.Title>Reset password</Dialog.Title>
-            <Dialog.Description>{user.email}</Dialog.Description>
+        </DialogTrigger>
+        <DialogContent>
+            <DialogTitle>Reset password</DialogTitle>
+            <DialogDescription>{user.email}</DialogDescription>
             <form
               className="stack-form"
               onSubmit={async (event) => {
@@ -54,10 +55,10 @@ function PasswordReset({ user }: { user: AdminUser }) {
                 }
               }}
             >
-              <label>
+              <Label>
                 New password
-                <input type="password" name="password" minLength={6} maxLength={200} required autoComplete="new-password" />
-              </label>
+                <Input type="password" name="password" minLength={6} maxLength={200} required autoComplete="new-password" />
+              </Label>
               {error && (
                 <p role="alert" className="status-message">
                   {error}
@@ -65,12 +66,8 @@ function PasswordReset({ user }: { user: AdminUser }) {
               )}
               <Button disabled={isLoading}>Reset password</Button>
             </form>
-            <Dialog.Close className="dialog-close" aria-label="Close">
-              <X size={16} />
-            </Dialog.Close>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+        </DialogContent>
+        </Dialog>
     </>
   );
 }
@@ -85,6 +82,7 @@ export default function Users() {
   const {
     register,
     handleSubmit,
+    control,
     reset,
     formState: { errors },
   } = useForm<z.infer<typeof schema>>({
@@ -123,7 +121,7 @@ export default function Users() {
       {(message || error) && (
         <p className="status-message" role="alert">
           {message || "Unable to load users."}
-          {error && <button onClick={refetch}>Retry</button>}
+          {error && <Button variant="ghost" onClick={refetch}>Retry</Button>}
         </p>
       )}
       <div className="table-scroll">
@@ -144,10 +142,15 @@ export default function Users() {
                   <small>{user.email}</small>
                 </td>
                 <td>
-                  <select value={user.role} aria-label={`Role for ${user.name}`} disabled={isLoading || user.id === session.user.id} onChange={(event) => void update(user.id, { role: event.target.value })}>
-                    <option>EDITOR</option>
-                    <option>ADMIN</option>
-                  </select>
+                  <Select value={user.role} disabled={isLoading || user.id === session.user.id} onValueChange={(role) => void update(user.id, { role })}>
+                    <SelectTrigger aria-label={`Role for ${user.name}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="EDITOR">EDITOR</SelectItem>
+                      <SelectItem value="ADMIN">ADMIN</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </td>
                 <td>
                   <span className={`status-tag ${user.isActive ? "published" : "draft"}`}>{!user.approvedAt ? "PENDING" : user.isActive ? "ACTIVE" : "DISABLED"}</span>
@@ -204,25 +207,36 @@ export default function Users() {
         >
           <h2>New user</h2>
           <div className="form-grid">
-            <label>
+            <Label>
               Name
-              <input {...register("name")} />
-            </label>
-            <label>
+              <Input {...register("name")} />
+            </Label>
+            <Label>
               Email
-              <input type="email" {...register("email")} />
-            </label>
-            <label>
+              <Input type="email" {...register("email")} />
+            </Label>
+            <Label>
               Password
-              <input type="password" autoComplete="new-password" {...register("password")} />
-            </label>
-            <label>
+              <Input type="password" autoComplete="new-password" {...register("password")} />
+            </Label>
+            <Label>
               Role
-              <select {...register("role")}>
-                <option>EDITOR</option>
-                <option>ADMIN</option>
-              </select>
-            </label>
+              <Controller
+                control={control}
+                name="role"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger aria-label="Role">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="EDITOR">EDITOR</SelectItem>
+                      <SelectItem value="ADMIN">ADMIN</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </Label>
           </div>
           {Object.keys(errors).length > 0 && <p className="status-message">Enter valid details and a password of at least 6 characters.</p>}
           <div className="form-actions">

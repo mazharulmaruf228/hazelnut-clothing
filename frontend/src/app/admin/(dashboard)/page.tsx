@@ -29,7 +29,7 @@ export default function Dashboard() {
       </div>
       {error && (
         <div className="status-message">
-          Unable to load overview. <button onClick={refetch}>Retry</button>
+          Unable to load overview. <Button variant="ghost" onClick={refetch}>Retry</Button>
         </div>
       )}
       <div className="stats-grid">

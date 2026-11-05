@@ -2,13 +2,19 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ArrowLeft, Save, ExternalLink } from "lucide-react";
 import { useCategoriesQuery, useChangeMutation } from "@/store/api";
 import { productSchema, type Product } from "@/schemas/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { errorMessage, slugify } from "@/lib/utils";
 import { VariantManager } from "./variant-manager";
 import { MediaManager } from "./media-manager";
@@ -33,11 +39,14 @@ export function ProductForm({ product }: { product?: Product }) {
   const { data: categories } = useCategoriesQuery();
   const [change, { isLoading }] = useChangeMutation();
   const [message, setMessage] = useState<{ text: string; success?: boolean }>();
+  const [navigationConfirmation, setNavigationConfirmation] = useState(false);
+  const [pendingHref, setPendingHref] = useState("");
   const router = useRouter();
   const [slugEdited, setSlugEdited] = useState(Boolean(product));
   const {
     register,
     handleSubmit,
+    control,
     reset,
     setValue,
     setError,
@@ -75,11 +84,14 @@ export function ProductForm({ product }: { product?: Product }) {
       event.returnValue = "";
     };
     const navigate = (event: MouseEvent) => {
-      const anchor = (event.target as Element).closest("a[href]");
-      if (anchor && !window.confirm("Discard your unsaved product changes?")) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
+      const anchor = (event.target as Element).closest<HTMLAnchorElement>("a[href]");
+      if (!anchor || anchor.target === "_blank" || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const destination = new URL(anchor.href, window.location.href);
+      if (destination.origin !== window.location.origin || destination.href === window.location.href) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPendingHref(`${destination.pathname}${destination.search}${destination.hash}`);
+      setNavigationConfirmation(true);
     };
     window.addEventListener("beforeunload", unload);
     document.addEventListener("click", navigate, true);
@@ -145,9 +157,9 @@ export function ProductForm({ product }: { product?: Product }) {
         <section className="form-section">
           <h2>Product details</h2>
           <div className="form-grid">
-            <label>
+            <Label>
               Name
-              <input
+              <Input
                 {...register("name", {
                   onChange: (event) => {
                     if (!slugEdited)
@@ -157,32 +169,42 @@ export function ProductForm({ product }: { product?: Product }) {
                   },
                 })}
               />
-            </label>
-            <label>
+            </Label>
+            <Label>
               URL slug
-              <input
+              <Input
                 {...register("slug", {
                   onChange: () => {
                     setSlugEdited(true);
                   },
                 })}
               />
-            </label>
-            <label className="full-width">
+            </Label>
+            <Label className="full-width">
               Description
-              <textarea rows={5} {...register("description")} />
-            </label>
-            <label>
+              <Textarea rows={5} {...register("description")} />
+            </Label>
+            <Label>
               Category
-              <select {...register("categoryId")}>
-                <option value="">Select category</option>
-                {categories?.items.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <Controller
+                control={control}
+                name="categoryId"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger ref={field.ref} onBlur={field.onBlur} aria-label="Category">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories?.items.map((category) => (
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </Label>
             <div className="form-link">
               <Link href="/admin/categories">Manage categories</Link>
             </div>
@@ -191,34 +213,46 @@ export function ProductForm({ product }: { product?: Product }) {
         <section className="form-section">
           <h2>Pricing & publishing</h2>
           <div className="form-grid">
-            <label>
+            <Label>
               Base price (BDT)
-              <input inputMode="decimal" {...register("price")} />
-            </label>
-            <label>
+              <Input inputMode="decimal" {...register("price")} />
+            </Label>
+            <Label>
               Discount (%)
-              <input inputMode="decimal" {...register("discountPercentage")} />
-            </label>
-            <label>
+              <Input inputMode="decimal" {...register("discountPercentage")} />
+            </Label>
+            <Label>
               Status
-              <select {...register("status")}>
-                <option>DRAFT</option>
-                {product && (
-                  <>
-                    <option>PUBLISHED</option>
-                    <option>ARCHIVED</option>
-                  </>
+              <Controller
+                control={control}
+                name="status"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger ref={field.ref} onBlur={field.onBlur} aria-label="Status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DRAFT">DRAFT</SelectItem>
+                      {product && <SelectItem value="PUBLISHED">PUBLISHED</SelectItem>}
+                      {product && <SelectItem value="ARCHIVED">ARCHIVED</SelectItem>}
+                    </SelectContent>
+                  </Select>
                 )}
-              </select>
-            </label>
-            <label className="checkbox-label">
-              <input type="checkbox" {...register("featured")} /> Featured product
-            </label>
+              />
+            </Label>
+            <Label className="checkbox-label">
+              <Controller
+                control={control}
+                name="featured"
+                render={({ field }) => <Checkbox id="featured" name={field.name} checked={field.value} onCheckedChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />}
+              />
+              <span>Featured product</span>
+            </Label>
             {!product && (
-              <label>
+              <Label>
                 Default variant SKU
-                <input {...register("sku")} />
-              </label>
+                <Input {...register("sku")} />
+              </Label>
             )}
           </div>
         </section>
@@ -250,6 +284,22 @@ export function ProductForm({ product }: { product?: Product }) {
           <MediaManager product={product} />
         </>
       )}
+      <AlertDialog open={navigationConfirmation} onOpenChange={setNavigationConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+          <AlertDialogDescription>Your product changes have not been saved. Leave this page and discard them?</AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button variant="outline">Continue editing</Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button variant="destructive" onClick={() => pendingHref && router.push(pendingHref)}>
+                Discard and leave
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

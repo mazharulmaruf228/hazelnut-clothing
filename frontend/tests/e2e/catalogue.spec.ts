@@ -26,6 +26,10 @@ async function login(page: Page, role = "admin") {
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
 }
+async function selectRadixOption(page: Page, label: string, value: string) {
+  await page.getByRole("combobox", { name: label }).click();
+  await page.getByRole("option", { name: value, exact: true }).click();
+}
 test("server-rendered catalogue matches the independent API contract", async ({ request }) => {
   const api = await request.get("/api/products/everyday-oxford-shirt");
   expect(api.status()).toBe(200);
@@ -39,12 +43,14 @@ test("server-rendered catalogue matches the independent API contract", async ({ 
 });
 test("browse, search, choose variants and inspect real images", async ({ page }, testInfo) => {
   await page.goto("/");
-  await expect(page.locator(".product-card")).toHaveCount(6);
-  for (const image of await page.locator(".product-image img").all()) {
+  await expect(page.locator(".featured-carousel-slide")).toHaveCount(6);
+  await expect(page.getByRole("region", { name: "Featured products" })).toBeVisible();
+  for (const image of await page.locator(".featured-carousel-image img").all()) {
     await image.scrollIntoViewIfNeeded();
     await expect.poll(() => image.evaluate((node) => (node as HTMLImageElement).complete && (node as HTMLImageElement).naturalWidth > 0)).toBe(true);
     await image.evaluate((node) => (node as HTMLImageElement).decode());
   }
+  await page.getByRole("button", { name: "Pause automatic rotation" }).click();
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await page.locator(".collection-banner img").evaluate((node) => (node as HTMLImageElement).decode());
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -76,6 +82,19 @@ test("browse, search, choose variants and inspect real images", async ({ page },
     fullPage: true,
   });
 });
+test("featured carousel respects reduced motion and supports keyboard navigation", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  const activeSlide = page.locator('.featured-carousel-slide[aria-hidden="false"]');
+  const initialSlide = await activeSlide.getAttribute("aria-label");
+  await expect(page.getByRole("button", { name: "Start automatic rotation" })).toHaveAttribute("aria-pressed", "false");
+  await page.waitForTimeout(5200);
+  await expect(activeSlide).toHaveAttribute("aria-label", initialSlide || "");
+  const next = page.getByRole("button", { name: "Next featured product" });
+  await next.focus();
+  await next.press("Enter");
+  await expect(page.locator('.featured-carousel-slide[aria-hidden="false"]')).not.toHaveAttribute("aria-label", initialSlide || "");
+});
 test("admin creates a category, draft and dynamic variant", async ({ page }, testInfo) => {
   await login(page);
   const suffix = testInfo.project.name;
@@ -86,10 +105,15 @@ test("admin creates a category, draft and dynamic variant", async ({ page }, tes
   await page.getByRole("button", { name: "Save category" }).click();
   await expect(page.locator("table")).toContainText(`Browser ${suffix}`);
   await page.goto("/admin/products/new");
+  await page.getByLabel("Name", { exact: true }).fill("Unsaved Browser Product");
+  await page.getByRole("main").getByRole("link", { name: "Products", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await page.getByRole("button", { name: "Continue editing", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/products\/new$/);
   await page.getByLabel("Name", { exact: true }).fill(`Browser Shirt ${suffix}`);
   await page.getByLabel("URL slug").fill(`browser-shirt-${suffix}`);
   await page.getByLabel("Description", { exact: true }).fill("A browser-tested cotton shirt.");
-  await page.getByRole("combobox", { name: "Category", exact: true }).selectOption({ label: `Browser ${suffix}` });
+  await selectRadixOption(page, "Category", `Browser ${suffix}`);
   await page.getByLabel("Base price (BDT)").fill("1590");
   await page.getByLabel("Default variant SKU").fill(`BROWSER-${suffix}`);
   await page.getByRole("button", { name: "Create draft" }).click();
@@ -103,7 +127,7 @@ test("admin creates a category, draft and dynamic variant", async ({ page }, tes
   await variant.getByLabel("Value", { exact: true }).fill("L");
   await variant.getByRole("button", { name: "Save variant" }).click();
   await expect(page.locator("table")).toContainText("size: L");
-  await page.getByRole("combobox", { name: "Status", exact: true }).selectOption("ARCHIVED");
+  await selectRadixOption(page, "Status", "ARCHIVED");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByText("Product saved.", { exact: true })).toBeVisible();
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
@@ -112,6 +136,31 @@ test("admin creates a category, draft and dynamic variant", async ({ page }, tes
     path: testInfo.outputPath("admin.png"),
     fullPage: true,
   });
+});
+test("admin user dialogs preserve self-role restrictions and recover fixture identity", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "Users", exact: true }).click();
+
+  const adminRow = page.getByRole("row").filter({ hasText: "test-admin@example.invalid" });
+  const editorRow = page.getByRole("row").filter({ hasText: "test-editor@example.invalid" });
+  await expect(adminRow.getByRole("combobox", { name: "Role for Test ADMIN" })).toBeDisabled();
+  await expect(editorRow).toBeVisible();
+
+  await editorRow.getByRole("button", { name: "Edit Test EDITOR" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Browser Editor");
+  await page.getByRole("button", { name: "Save user", exact: true }).click();
+  await expect(editorRow).toContainText("Browser Editor");
+
+  await editorRow.getByRole("button", { name: "Reset password for Browser Editor" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByLabel("New password", { exact: true }).fill("Catalogue-e2e-password-123!");
+  await page.getByRole("button", { name: "Reset password", exact: true }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+
+  await editorRow.getByRole("button", { name: "Edit Browser Editor" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Test EDITOR");
+  await page.getByRole("button", { name: "Save user", exact: true }).click();
+  await expect(editorRow).toContainText("Test EDITOR");
 });
 test("editor cannot access user management", async ({ page }) => {
   await login(page, "editor");

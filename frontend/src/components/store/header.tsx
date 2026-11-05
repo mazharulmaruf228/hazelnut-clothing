@@ -5,10 +5,6 @@ import { storeName } from "@/lib/site";
 export function Header() {
   return (
     <>
-      <div className="announcement">
-        A considered wardrobe. An everyday point of view.
-        <span>Prices in BDT</span>
-      </div>
       <header className="site-header glass">
         <div className="header-inner">
           <Link href="/" className="wordmark" aria-label={`${storeName} home`}>
@@ -41,13 +37,12 @@ export function Footer() {
         <Link href="/" className="wordmark">
           {storeName}
         </Link>
-        <p>Everyday pieces. Individual expression.</p>
+        <p>Copyright &copy; 2026</p>
       </div>
       <div>
         <Link href="/products">
           Explore the collection <ArrowUpRight size={15} />
         </Link>
-        <span>BDT / Bangladesh</span>
         <Link href="/admin">Catalogue management</Link>
       </div>
     </footer>

@@ -10,6 +10,8 @@ import { useLoginMutation } from "@/store/api";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/utils";
 import { storeName } from "@/lib/site";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const schema = z.object({ email: z.email(), password: z.string().min(1) });
 function LoginForm() {
@@ -64,16 +66,16 @@ function LoginForm() {
           </p>
         )}
         <form onSubmit={handleSubmit(submit)} className="stack-form">
-          <label>
+          <Label>
             Email
-            <input type="email" autoComplete="username" {...register("email")} />
+            <Input type="email" autoComplete="username" {...register("email")} />
             {errors.email && <span className="field-error">Enter a valid email address</span>}
-          </label>
-          <label>
+          </Label>
+          <Label>
             Password
-            <input type="password" autoComplete="current-password" {...register("password")} />
+            <Input type="password" autoComplete="current-password" {...register("password")} />
             {errors.password && <span className="field-error">Password is required</span>}
-          </label>
+          </Label>
           <Button disabled={isLoading}>
             {isLoading ? "Signing in..." : "Sign in"}
             <ArrowRight size={16} />
