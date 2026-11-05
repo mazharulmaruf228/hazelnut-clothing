@@ -6,7 +6,7 @@ export const config = z
   .object({
     NODE_ENV: z.string().default("development"),
     PORT: z.coerce.number().int().positive().default(4000),
-    DATABASE_URL: z.string().default("postgresql://catalogue:change-me@127.0.0.1:55432/catalogue?schema=public"),
+    DATABASE_URL: z.string().default("postgresql://catalogue:change-me@127.0.0.1:5432/catalogue?schema=public"),
     PUBLIC_ORIGIN: z.url().default("http://localhost:3000"),
     JWT_SECRET: z
       .string()

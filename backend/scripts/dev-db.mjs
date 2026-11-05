@@ -8,7 +8,7 @@ const postgres = new EmbeddedPostgres({
   databaseDir,
   user: "catalogue",
   password: "change-me",
-  port: Number(process.env.LOCAL_PG_PORT || 55432),
+  port: Number(process.env.LOCAL_PG_PORT || 5432),
   persistent: true,
   authMethod: "scram-sha-256",
   autoRehydrateSymlinks: true,
@@ -24,7 +24,7 @@ for (const name of ["catalogue", "catalogue_test"]) {
   if (!found.rowCount) await client.query(`CREATE DATABASE "${name}"`);
 }
 await client.end();
-console.log(`Development PostgreSQL ready on 127.0.0.1:${process.env.LOCAL_PG_PORT || 55432}. Stop with Ctrl+C.`);
+console.log(`Development PostgreSQL ready on 127.0.0.1:${process.env.LOCAL_PG_PORT || 5432}. Stop with Ctrl+C.`);
 let stopping = false;
 async function shutdown() {
   if (stopping) return;
