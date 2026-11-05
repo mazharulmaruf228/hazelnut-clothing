@@ -9,13 +9,15 @@
 }
 
 :root {
-  --background: #f6f7f5;
+  --background: #f4f6f2;
   --foreground: #202824;
   --muted: #5d6860;
   --line: #dce1dc;
   --green: #365e4a;
   --coral: #ba4d3a;
   --white: #fff;
+  --glass-surface: rgba(255, 255, 255, 0.68);
+  --glass-border: rgba(255, 255, 255, 0.8);
   --radius: 6px;
 }
 @theme inline {
@@ -34,7 +36,8 @@ html {
 body {
   margin: 0;
   color: var(--foreground);
-  background: var(--background);
+  background: linear-gradient(135deg, #f8f9f6 0%, #f0f4ef 54%, #f7f7f3 100%);
+  background-attachment: fixed;
   font-family: var(--font-sans), "Segoe UI", sans-serif;
   font-size: 14px;
   line-height: 1.55;
@@ -126,9 +129,11 @@ legend {
   text-transform: capitalize;
 }
 .glass {
-  background: #ffffffcf;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--glass-surface);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 12px 36px rgba(31, 53, 39, 0.08);
+  backdrop-filter: blur(24px) saturate(145%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
 }
 .muted {
   color: var(--muted);
@@ -140,12 +145,13 @@ legend {
   font-weight: 600;
 }
 .announcement {
-  background: #2c4739;
+  background: linear-gradient(100deg, #263d32, #365e4a 62%, #405847);
   color: #fff;
-  padding: 9px 5%;
+  padding: 8px 5%;
   font-size: 11px;
   display: flex;
   justify-content: space-between;
+  letter-spacing: 0.4px;
 }
 .announcement span {
   color: #d8e6d9;
@@ -154,12 +160,15 @@ legend {
   position: sticky;
   top: 0;
   z-index: 20;
-  border-bottom: 1px solid #ffffff99;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.72);
+  transition:
+    box-shadow 220ms ease,
+    background-color 220ms ease;
 }
 .header-inner {
   max-width: 1500px;
   margin: auto;
-  padding: 21px 5%;
+  padding: 17px 5%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -194,6 +203,13 @@ legend {
   align-items: center;
   gap: 5px;
 }
+.header-inner nav a {
+  transition: color 180ms ease;
+}
+.header-inner nav a:hover,
+.site-footer a:hover {
+  color: var(--green);
+}
 .header-tools {
   gap: 14px;
 }
@@ -202,50 +218,104 @@ legend {
   place-items: center;
   width: 34px;
   height: 34px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+.icon-link:hover {
+  background: #ffffffa8;
+  border-color: #ffffffd9;
+  transform: translateY(-2px);
 }
 .collection-banner {
   position: relative;
-  height: 290px;
+  height: min(68svh, 620px);
+  min-height: 480px;
   overflow: hidden;
+  isolation: isolate;
 }
 .collection-banner > img {
   object-position: center 55%;
+  animation: hero-drift 22s ease-in-out infinite alternate;
 }
 .banner-scrim {
   position: absolute;
   inset: 0;
-  background: #f4f6f1a8;
+  background: linear-gradient(90deg, rgba(23, 39, 30, 0.62) 0%, rgba(23, 39, 30, 0.36) 43%, rgba(23, 39, 30, 0.04) 100%);
 }
 .banner-content {
   position: relative;
   max-width: 1350px;
+  height: 100%;
   margin: auto;
-  padding: 38px 5%;
+  padding: 55px 5%;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  color: #fff;
+}
+.banner-content > * {
+  animation: rise-in 760ms both;
+}
+.banner-content > :nth-child(2) {
+  animation-delay: 100ms;
+}
+.banner-content > :nth-child(3) {
+  animation-delay: 190ms;
+}
+.banner-content > :nth-child(4) {
+  animation-delay: 280ms;
+}
+.banner-content .eyebrow {
+  color: #f0e5c7;
 }
 .banner-content h1 {
-  font-size: 66px;
-  margin: 9px 0;
+  font-size: 96px;
+  margin: 12px 0 4px;
+  line-height: 0.92;
 }
 .banner-content p {
-  font-size: 16px;
+  font-size: 17px;
+  color: #f4f5ef;
 }
 .banner-content a {
   display: inline-flex;
-  gap: 30px;
+  gap: 22px;
   align-items: center;
-  font-size: 12px;
-  border-bottom: 1px solid var(--foreground);
-  padding-bottom: 4px;
-  margin-top: 24px;
+  font-size: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.52);
+  border-radius: 4px;
+  padding: 11px 15px;
+  margin-top: 29px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  transition:
+    background 180ms ease,
+    transform 180ms ease;
+}
+.banner-content a:hover {
+  background: rgba(255, 255, 255, 0.24);
+  transform: translateY(-2px);
 }
 .banner-edition {
   position: absolute;
   right: 5%;
-  bottom: 32px;
+  bottom: 30px;
   z-index: 1;
   font-family: var(--font-display), serif;
-  font-size: 23px;
+  font-size: 21px;
+  color: #fff;
+  padding: 12px 17px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 12px 32px rgba(18, 30, 23, 0.12);
 }
 .catalogue-section {
   max-width: 1500px;
@@ -309,7 +379,13 @@ legend {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 165px 40px;
   gap: 10px;
-  margin-bottom: 24px;
+  margin-bottom: 25px;
+  padding: 8px 10px;
+  border: 1px solid #ffffffd1;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.48);
+  box-shadow: 0 8px 24px rgba(34, 54, 41, 0.045);
+  backdrop-filter: blur(16px) saturate(125%);
 }
 .search-field {
   display: flex;
@@ -335,13 +411,40 @@ legend {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 32px 22px;
 }
+.product-card {
+  animation: rise-in 650ms both;
+  transition: transform 220ms ease;
+}
+.product-card:nth-child(2) {
+  animation-delay: 70ms;
+}
+.product-card:nth-child(3) {
+  animation-delay: 140ms;
+}
+.product-card:nth-child(4) {
+  animation-delay: 210ms;
+}
+.product-card:nth-child(5) {
+  animation-delay: 280ms;
+}
+.product-card:nth-child(6) {
+  animation-delay: 350ms;
+}
+.product-card:hover {
+  transform: translateY(-4px);
+}
 .product-image {
   display: block;
   position: relative;
   aspect-ratio: 3/3.7;
   background: #e8eae6;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: 5px;
+  box-shadow: 0 8px 24px rgba(32, 48, 37, 0.07);
+  transition: box-shadow 220ms ease;
+}
+.product-card:hover .product-image {
+  box-shadow: 0 16px 34px rgba(32, 48, 37, 0.14);
 }
 .product-image img {
   transition: transform 0.5s ease;
@@ -369,6 +472,14 @@ legend {
   height: 30px;
   background: #ffffffd9;
   border-radius: 50%;
+  backdrop-filter: blur(12px);
+  transition:
+    transform 180ms ease,
+    background 180ms ease;
+}
+.product-card:hover .product-open {
+  transform: translate(2px, -2px);
+  background: #fff;
 }
 .product-caption {
   padding-top: 14px;
@@ -782,13 +893,14 @@ legend {
     gap: 2px;
   }
   .collection-banner {
-    height: 235px;
+    height: 430px;
+    min-height: 390px;
   }
   .banner-content {
-    padding-top: 27px;
+    padding: 28px 5%;
   }
   .banner-content h1 {
-    font-size: 54px;
+    font-size: 64px;
   }
   .banner-content p {
     font-size: 14px;
@@ -907,6 +1019,24 @@ legend {
     font-size: 11px;
   }
 }
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes hero-drift {
+  from {
+    transform: scale(1.02);
+  }
+  to {
+    transform: scale(1.08);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -951,6 +1081,15 @@ legend {
   font-size: 12px;
   border-radius: 4px;
   color: var(--muted);
+  transition:
+    color 180ms ease,
+    background 180ms ease,
+    transform 180ms ease;
+}
+.admin-sidebar nav > a:hover {
+  color: var(--green);
+  background: rgba(255, 255, 255, 0.55);
+  transform: translateX(2px);
 }
 .admin-sidebar nav > a.active {
   background: #e2ebe2;
@@ -1022,12 +1161,31 @@ legend {
 }
 .stat-item {
   border: 1px solid #dce4da;
-  background: #ffffffb8;
+  background: rgba(255, 255, 255, 0.66);
   border-radius: 6px;
   padding: 20px;
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 16px;
+  box-shadow: 0 10px 28px rgba(35, 54, 41, 0.05);
+  backdrop-filter: blur(16px) saturate(125%);
+  animation: rise-in 650ms both;
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease;
+}
+.stat-item:nth-child(2) {
+  animation-delay: 80ms;
+}
+.stat-item:nth-child(3) {
+  animation-delay: 160ms;
+}
+.stat-item:nth-child(4) {
+  animation-delay: 240ms;
+}
+.stat-item:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 15px 32px rgba(35, 54, 41, 0.09);
 }
 .stat-item > svg {
   grid-column: 2;
@@ -1079,7 +1237,8 @@ legend {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #ffffff80;
+  background: rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(14px);
 }
 table {
   width: 100%;
