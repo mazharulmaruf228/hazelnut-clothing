@@ -50,6 +50,16 @@ If ports are occupied, change `PORT`/`API_INTERNAL_URL`/`PUBLIC_ORIGIN` together
 Frontend and API use same-origin `/api` requests through Next rewrites in development
 and Caddy in production. PostgreSQL is never accessed by the frontend.
 
+For mobile testing through an ngrok tunnel to port 3000, set
+`NEXT_PUBLIC_SITE_URL` in the frontend's local `.env` to the tunnel's HTTPS URL.
+Next.js allows that hostname for development connections; without it, the page
+can render but remain non-interactive because its development WebSocket is blocked.
+Restart the frontend dev server if it does not reload the configuration, then
+reload the page on the phone. Update this value whenever the tunnel URL changes,
+and restore `http://localhost:3000` when returning to local-only development.
+This only configures the frontend; CMS authentication through the tunnel also
+requires the backend's `PUBLIC_ORIGIN` to match.
+
 ### First Administrator
 
 From `backend`, set `ADMIN_PASSWORD` in your own terminal environment (at least

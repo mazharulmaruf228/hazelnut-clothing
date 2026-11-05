@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const config: NextConfig = {
+  allowedDevOrigins: [new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").hostname],
   output: "standalone",
   distDir: process.env.NEXT_DIST_DIR || ".next",
   turbopack: { root: process.cwd() },

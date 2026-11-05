@@ -59,10 +59,15 @@ test("browse, search, choose variants and inspect real images", async ({ page },
   await expect(page.locator(".product-card")).toHaveCount(1);
   await page.locator(".product-caption a").first().click();
   await expect(page.getByRole("heading", { name: "Everyday Oxford Shirt", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "XL", exact: true }).click();
+  const variant = page.getByRole("button", { name: "XL", exact: true });
+  if (testInfo.project.name === "mobile") await variant.tap();
+  else await variant.click();
+  await expect(variant).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".detail-price")).toContainText("1,791");
   await expect(page).toHaveURL(/variant=/);
-  await page.getByTitle("Enlarge product image").click();
+  const enlarge = page.getByTitle("Enlarge product image");
+  if (testInfo.project.name === "mobile") await enlarge.tap();
+  else await enlarge.click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByRole("button", { name: "Close image", exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
