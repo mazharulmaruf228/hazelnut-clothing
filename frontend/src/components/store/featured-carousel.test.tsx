@@ -74,28 +74,34 @@ function setMotionPreference(reduced: boolean) {
 beforeEach(() => setMotionPreference(false));
 
 describe("featured carousel", () => {
-  it("autoplays every five seconds when reduced motion is not requested and pauses on focus", async () => {
+  it("autoplays every five seconds and pauses while hovered or focused", async () => {
     setMotionPreference(false);
     render(<FeaturedCarousel products={[product, { ...product, id: "product-2", name: "Cotton Tee", slug: "cotton-tee" }]} />);
+    const carousel = screen.getByRole("region", { name: "Featured products" });
 
     await waitFor(() => expect(autoplayPlay).toHaveBeenCalled());
     expect(autoplayOptions.delay).toBe(5000);
     autoplayPlay.mockClear();
-    fireEvent.focus(screen.getByRole("region", { name: "Featured products" }));
+    fireEvent.pointerEnter(carousel);
     await waitFor(() => expect(autoplayStop).toHaveBeenCalled());
-    const resume = screen.getByRole("button", { name: "Start automatic rotation" });
-    expect(resume).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(resume);
+    expect(screen.queryByRole("button", { name: /automatic rotation/i })).not.toBeInTheDocument();
+    autoplayPlay.mockClear();
+    fireEvent.pointerLeave(carousel);
+    await waitFor(() => expect(autoplayPlay).toHaveBeenCalled());
+    autoplayPlay.mockClear();
+    fireEvent.focus(carousel);
+    await waitFor(() => expect(autoplayStop).toHaveBeenCalled());
+    fireEvent.blur(carousel);
     await waitFor(() => expect(autoplayPlay).toHaveBeenCalled());
   });
 
-  it("starts paused for reduced motion and allows explicit rotation", async () => {
+  it("does not autoplay or show a rotation toggle for reduced motion", async () => {
     setMotionPreference(true);
     render(<FeaturedCarousel products={[product, { ...product, id: "product-2" }]} />);
 
     expect(autoplayPlay).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Start automatic rotation" }));
-    await waitFor(() => expect(autoplayPlay).toHaveBeenCalled());
+    expect(autoplayStop).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /automatic rotation/i })).not.toBeInTheDocument();
   });
 
   it("hides carousel controls for a single featured product", () => {

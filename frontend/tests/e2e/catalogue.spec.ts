@@ -42,6 +42,7 @@ test("server-rendered catalogue matches the independent API contract", async ({ 
   expect(html).toContain("1701.00");
 });
 test("browse, search, choose variants and inspect real images", async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.locator(".featured-carousel-slide")).toHaveCount(6);
   await expect(page.getByRole("region", { name: "Featured products" })).toBeVisible();
@@ -50,7 +51,6 @@ test("browse, search, choose variants and inspect real images", async ({ page },
     await expect.poll(() => image.evaluate((node) => (node as HTMLImageElement).complete && (node as HTMLImageElement).naturalWidth > 0)).toBe(true);
     await image.evaluate((node) => (node as HTMLImageElement).decode());
   }
-  await page.getByRole("button", { name: "Pause automatic rotation" }).click();
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await page.locator(".collection-banner img").evaluate((node) => (node as HTMLImageElement).decode());
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -87,7 +87,7 @@ test("featured carousel respects reduced motion and supports keyboard navigation
   await page.goto("/");
   const activeSlide = page.locator('.featured-carousel-slide[aria-hidden="false"]');
   const initialSlide = await activeSlide.getAttribute("aria-label");
-  await expect(page.getByRole("button", { name: "Start automatic rotation" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: /automatic rotation/i })).toHaveCount(0);
   await page.waitForTimeout(5200);
   await expect(activeSlide).toHaveAttribute("aria-label", initialSlide || "");
   const next = page.getByRole("button", { name: "Next featured product" });
@@ -109,10 +109,11 @@ test("story image fold reverses with scroll and stays open for reduced motion", 
       window.scrollTo(0, 0);
     });
     const leftPanel = page.locator(".story-fold-left");
-    const readPanelState = () => leftPanel.evaluate((element) => ({
-      transform: getComputedStyle(element).transform,
-      opacity: getComputedStyle(element).opacity,
-    }));
+    const readPanelState = () =>
+      leftPanel.evaluate((element) => ({
+        transform: getComputedStyle(element).transform,
+        opacity: getComputedStyle(element).opacity,
+      }));
     const foldedAtStart = await readPanelState();
     await image.scrollIntoViewIfNeeded();
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);

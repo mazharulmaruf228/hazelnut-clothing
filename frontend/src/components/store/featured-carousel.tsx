@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
-import { ArrowLeft, ArrowRight, ArrowUpRight, Pause, Play } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight } from "lucide-react";
 import type { Product } from "@/schemas/api";
 import { money } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,16 +15,14 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
   const [viewportRef, emblaApi] = useEmblaCarousel({ loop: products.length > 1, align: "start", duration: 70 }, [autoplay]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(true);
-  const [rotationEnabled, setRotationEnabled] = useState(true);
-  const [pausedByInteraction, setPausedByInteraction] = useState(false);
-  const [explicitlyStarted, setExplicitlyStarted] = useState(false);
-  const shouldRotate = products.length > 1 && rotationEnabled && !pausedByInteraction && (!reducedMotion || explicitlyStarted);
+  const [pointerInside, setPointerInside] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+  const shouldRotate = products.length > 1 && !reducedMotion && !pointerInside && !focusWithin;
 
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const updatePreference = () => {
       setReducedMotion(preference.matches);
-      if (preference.matches) setRotationEnabled(false);
     };
     updatePreference();
     preference.addEventListener("change", updatePreference);
@@ -46,14 +44,6 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
     else autoplay.stop();
   }, [autoplay, shouldRotate]);
 
-  function pauseForInteraction() {
-    setPausedByInteraction(true);
-  }
-
-  function startForInteraction() {
-    setPausedByInteraction(false);
-  }
-
   if (products.length === 0) {
     return (
       <section className="featured-carousel-empty catalogue-section" id="collection">
@@ -70,10 +60,13 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
       role="region"
       aria-roledescription="carousel"
       aria-label="Featured products"
-      onPointerEnter={pauseForInteraction}
-      onPointerLeave={startForInteraction}
-      onFocusCapture={pauseForInteraction}
-      onPointerDown={pauseForInteraction}
+      onPointerEnter={() => setPointerInside(true)}
+      onPointerLeave={() => setPointerInside(false)}
+      onPointerDown={() => setPointerInside(true)}
+      onFocusCapture={() => setFocusWithin(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false);
+      }}
     >
       <div className="featured-carousel-heading">
         <div>
@@ -131,7 +124,6 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
                 aria-label={`Go to slide ${index + 1}: ${product.name}`}
                 aria-current={index === selectedIndex ? "true" : undefined}
                 onClick={() => {
-                  pauseForInteraction();
                   emblaApi?.scrollTo(index);
                 }}
               >
@@ -148,7 +140,6 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
               title="Previous featured product"
               aria-label="Previous featured product"
               onClick={() => {
-                pauseForInteraction();
                 emblaApi?.scrollPrev();
               }}
             >
@@ -162,7 +153,6 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
               title="Next featured product"
               aria-label="Next featured product"
               onClick={() => {
-                pauseForInteraction();
                 emblaApi?.scrollNext();
               }}
             >
