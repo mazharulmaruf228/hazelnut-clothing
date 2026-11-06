@@ -831,7 +831,7 @@ legend {
   .story-fold-panel {
     animation: story-fold-scroll 1ms linear both;
     animation-timeline: --story-section;
-    animation-range: entry 0% exit 100%;
+    /* Default range (cover) equals entry 0%..exit 100%; an explicit value gets mis-minified in production. */
   }
   @keyframes story-fold-scroll {
     0% {
