@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import argon2 from "argon2";
 
-const url = process.env.TEST_DATABASE_URL || "postgresql://catalogue:change-me@127.0.0.1:5432/catalogue_test?schema=public";
+const url = process.env.TEST_DATABASE_URL || "postgresql://catalogue:change-me@127.0.0.1:55432/catalogue_test?schema=public";
 if (!new URL(url).pathname.endsWith("_test")) throw new Error("Browser fixtures require a database ending in _test");
 process.env.DATABASE_URL = url;
 process.env.NODE_ENV = "test";

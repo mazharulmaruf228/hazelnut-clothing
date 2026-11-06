@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { spawnSync } from "node:child_process";
 
-const url = process.env.TEST_DATABASE_URL || "postgresql://catalogue:change-me@127.0.0.1:5432/catalogue_test?schema=public";
+const url = process.env.TEST_DATABASE_URL || "postgresql://catalogue:change-me@127.0.0.1:55432/catalogue_test?schema=public";
 if (!new URL(url).pathname.endsWith("_test")) throw new Error("TEST_DATABASE_URL must point to a dedicated database ending in _test");
 const env = {
   ...process.env,
