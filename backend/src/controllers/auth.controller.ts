@@ -14,7 +14,7 @@ const cookie = {
 
 function setSession(res: Response, session: { access: string; refresh: string }) {
   res.cookie("access", session.access, { ...cookie, maxAge: 15 * 60_000 });
-  res.cookie("refresh", session.refresh, { ...cookie, maxAge: 7 * 86400_000 });
+  res.cookie("refresh", session.refresh, { ...cookie, maxAge: 1 * 86400_000 });
 }
 
 export const issueCsrf: RequestHandler = (_req, res) => {
