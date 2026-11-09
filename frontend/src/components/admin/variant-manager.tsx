@@ -19,6 +19,7 @@ const schema = z.object({
   price: z.string().regex(/^(\d{1,10}(\.\d{1,2})?)?$/),
   isDefault: z.boolean(),
   isActive: z.boolean(),
+  stockOnHand: z.string().regex(/^\d{1,7}$/),
   attributes: z
     .array(
       z.object({
@@ -46,6 +47,7 @@ function VariantForm({ product, variant, close }: { product: Product; variant?: 
       price: variant?.price ?? "",
       isDefault: variant?.isDefault || false,
       isActive: variant?.isActive ?? true,
+      stockOnHand: String(variant?.stockOnHand ?? 0),
       attributes: Object.entries(variant?.attributes || {}).map(([key, value]) => ({ key, value })),
     },
   });
@@ -62,6 +64,7 @@ function VariantForm({ product, variant, close }: { product: Product; variant?: 
         body: {
           ...values,
           price: values.price || null,
+          stockOnHand: Number(values.stockOnHand),
           attributes: Object.fromEntries(values.attributes.map((item) => [item.key, item.value])),
         },
       }).unwrap();
@@ -90,6 +93,10 @@ function VariantForm({ product, variant, close }: { product: Product; variant?: 
         <Label>
           Price override (BDT)
           <Input placeholder={`Inherit ${product.price}`} inputMode="decimal" {...register("price")} />
+        </Label>
+        <Label>
+          Stock on hand
+          <Input type="number" min="0" max="1000000" {...register("stockOnHand")} />
         </Label>
         <div className="checkbox-group">
           <Label className="checkbox-label">
@@ -159,6 +166,7 @@ export function VariantManager({ product }: { product: Product }) {
               <th>Variant</th>
               <th>Attributes</th>
               <th>Effective price</th>
+              <th>Available / reserved</th>
               <th>State</th>
               <th>Actions</th>
             </tr>
@@ -178,6 +186,9 @@ export function VariantManager({ product }: { product: Product }) {
                 <td>
                   {money(variant.effectivePrice)}
                   <small>{variant.price === null ? "Inherited" : "Override"}</small>
+                </td>
+                <td>
+                  {variant.availableQuantity ?? 0} / {variant.stockReserved ?? 0}
                 </td>
                 <td>
                   {variant.isDefault ? (

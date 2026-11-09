@@ -60,7 +60,7 @@ const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
 export const catalogueApi = createApi({
   reducerPath: "catalogueApi",
   baseQuery,
-  tagTypes: ["Catalogue", "Users", "Session"],
+  tagTypes: ["Catalogue", "Users", "Session", "Orders"],
   endpoints: (builder) => ({
     me: builder.query<{ user: AdminUser }, void>({
       query: () => "/auth/me",
@@ -94,11 +94,15 @@ export const catalogueApi = createApi({
       query: () => "/admin/users",
       providesTags: ["Users"],
     }),
-    change: builder.mutation<unknown, { url: string; method: "POST" | "PATCH" | "DELETE"; body?: unknown }>({ query: (input) => input, invalidatesTags: ["Catalogue", "Users"] }),
+    orders: builder.query<{ items: import("@/schemas/api").Order[] }, void>({
+      query: () => "/admin/orders",
+      providesTags: ["Orders"],
+    }),
+    change: builder.mutation<unknown, { url: string; method: "POST" | "PATCH" | "DELETE"; body?: unknown }>({ query: (input) => input, invalidatesTags: ["Catalogue", "Users", "Orders"] }),
     upload: builder.mutation<unknown, FormData>({
       query: (body) => ({ url: "/admin/uploads", method: "POST", body }),
       invalidatesTags: ["Catalogue"],
     }),
   }),
 });
-export const { useMeQuery, useLoginMutation, useLogoutMutation, useOverviewQuery, useProductsQuery, useProductQuery, useCategoriesQuery, useUsersQuery, useChangeMutation, useUploadMutation } = catalogueApi;
+export const { useMeQuery, useLoginMutation, useLogoutMutation, useOverviewQuery, useProductsQuery, useProductQuery, useCategoriesQuery, useUsersQuery, useOrdersQuery, useChangeMutation, useUploadMutation } = catalogueApi;

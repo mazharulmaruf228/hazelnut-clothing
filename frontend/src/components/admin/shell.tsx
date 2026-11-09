@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, Package, FolderTree, Users, LogOut, ArrowUpRight, Settings } from "lucide-react";
+import { LayoutDashboard, Package, FolderTree, Users, LogOut, ArrowUpRight, Settings, ShoppingCart } from "lucide-react";
 import { useMeQuery, useLogoutMutation, catalogueApi } from "@/store/api";
 import { useDispatch } from "react-redux";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const items = [
     { href: "/admin", label: "Overview", icon: LayoutDashboard },
     { href: "/admin/products", label: "Products", icon: Package },
+    { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
     { href: "/admin/categories", label: "Categories", icon: FolderTree },
     ...(data.user.role === "ADMIN" ? [{ href: "/admin/users", label: "Users", icon: Users }] : []),
     { href: "/admin/account", label: "Account", icon: Settings },

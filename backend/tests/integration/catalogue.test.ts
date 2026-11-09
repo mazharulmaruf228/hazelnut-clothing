@@ -45,7 +45,7 @@ async function signIn(agent: ReturnType<typeof request.agent>, email: string) {
 
 beforeAll(async () => {
   if (!new URL(config.DATABASE_URL).pathname.endsWith("_test")) throw new Error("Refusing to clear a non-test database");
-  await db.$executeRawUnsafe('TRUNCATE "AssetDeletion", "ProductImage", "ProductVariant", "Product", "Category", "AdminSession", "OAuthIdentity", "AdminUser" CASCADE');
+  await db.$executeRawUnsafe('TRUNCATE "OrderItem", "Order", "AssetDeletion", "ProductImage", "ProductVariant", "Product", "Category", "AdminSession", "OAuthIdentity", "AdminUser" CASCADE');
   const passwordHash = await argon2.hash("integration-password-123");
   const user = await db.adminUser.create({
     data: {
@@ -165,6 +165,130 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
       status: "PUBLISHED",
     });
     expect(response.body.images[0].alt).toBe("A white shirt");
+  });
+  it("reserves variant stock atomically and releases or consumes it during admin review", async () => {
+    expect((await admin.patch(`/api/admin/variants/${defaultId}`).set(adminHeaders).send({ stockOnHand: 4 })).status).toBe(200);
+    expect((await request(app).get("/api/products/test-shirt")).body.variants.find((variant: { id: string }) => variant.id === defaultId)).toMatchObject({ inStock: true, availableQuantity: 4 });
+    const alternate = await admin
+      .post(`/api/admin/products/${productId}/variants`)
+      .set(adminHeaders)
+      .send({ name: "Large", sku: "TEST-EDIT-L", price: "1200", attributes: { size: "EDIT" }, stockOnHand: 5 });
+    expect(alternate.status).toBe(201);
+    const alternateId = alternate.body.variants.find((variant: { sku: string }) => variant.sku === "TEST-EDIT-L").id;
+
+    const details = {
+      customerName: "Guest Customer",
+      email: "guest@test.invalid",
+      phone: "+8801700000000",
+      deliveryAddress: "12 Example Road, Dhaka",
+      deliveryArea: "Dhaka",
+      customerNote: "Call on arrival",
+    };
+    const attempts = await Promise.all(
+      [0, 1].map(() =>
+        request(app)
+          .post("/api/orders")
+          .send({ ...details, items: [{ variantId: defaultId, quantity: 3 }] }),
+      ),
+    );
+    expect(attempts.map((response) => response.status).sort()).toEqual([201, 409]);
+    const pending = attempts.find((response) => response.status === 201)!.body;
+    expect(pending).toMatchObject({ status: "PENDING_REVIEW", subtotal: "2700.00" });
+    expect((await db.productVariant.findUniqueOrThrow({ where: { id: defaultId } })).stockReserved).toBe(3);
+
+    const rejected = await admin.patch(`/api/admin/orders/${pending.id}/status`).set(adminHeaders).send({ status: "REJECTED" });
+    expect(rejected.status).toBe(200);
+    expect((await db.productVariant.findUniqueOrThrow({ where: { id: defaultId } })).stockReserved).toBe(0);
+    expect((await admin.patch(`/api/admin/orders/${pending.id}/status`).set(adminHeaders).send({ status: "REJECTED" })).status).toBe(200);
+    const rejectedOrder = (await admin.get("/api/admin/orders")).body.items.find((order: { id: string }) => order.id === pending.id);
+    expect(
+      (
+        await admin
+          .patch(`/api/admin/orders/${pending.id}`)
+          .set(adminHeaders)
+          .send({ ...details, updatedAt: rejectedOrder.updatedAt, items: [{ variantId: defaultId, quantity: 1 }] })
+      ).status,
+    ).toBe(409);
+
+    const forgedPrice = await request(app)
+      .post("/api/orders")
+      .send({ ...details, items: [{ variantId: defaultId, quantity: 1, unitPrice: "0.01" }] });
+    expect(forgedPrice.status).toBe(400);
+
+    const editable = await request(app)
+      .post("/api/orders")
+      .send({ ...details, items: [{ variantId: defaultId, quantity: 2 }] });
+    expect(editable.status).toBe(201);
+    const opened = (await admin.get("/api/admin/orders")).body.items.find((order: { id: string }) => order.id === editable.body.id);
+    expect(opened.updatedAt).toBeTruthy();
+    expect((await admin.patch(`/api/admin/variants/${alternateId}`).set(adminHeaders).send({ price: "1300" })).status).toBe(200);
+    const changed = await admin
+      .patch(`/api/admin/orders/${editable.body.id}`)
+      .set(adminHeaders)
+      .send({
+        ...details,
+        customerName: "Updated Guest",
+        deliveryAddress: "14 Example Road, Dhaka",
+        updatedAt: opened.updatedAt,
+        items: [{ variantId: alternateId, quantity: 3 }],
+      });
+    expect(changed.status).toBe(200);
+    expect(changed.body).toMatchObject({ status: "PENDING_REVIEW", customerName: "Updated Guest", subtotal: "3510.00" });
+    expect(changed.body.items[0]).toMatchObject({ sku: "TEST-EDIT-L", quantity: 3, unitPrice: "1170.00", lineTotal: "3510.00" });
+    expect(await db.productVariant.findUniqueOrThrow({ where: { id: defaultId } })).toMatchObject({ stockReserved: 0 });
+    expect(await db.productVariant.findUniqueOrThrow({ where: { id: alternateId } })).toMatchObject({ stockReserved: 3 });
+
+    expect((await admin.patch(`/api/admin/variants/${alternateId}`).set(adminHeaders).send({ price: "1400" })).status).toBe(200);
+    const contactOnly = await admin
+      .patch(`/api/admin/orders/${editable.body.id}`)
+      .set(adminHeaders)
+      .send({
+        ...details,
+        customerName: "Updated Contact",
+        deliveryAddress: "16 Example Road, Dhaka",
+        updatedAt: changed.body.updatedAt,
+        items: [{ variantId: alternateId, quantity: 3 }],
+      });
+    expect(contactOnly.status).toBe(200);
+    expect(contactOnly.body).toMatchObject({ customerName: "Updated Contact", subtotal: "3510.00" });
+    expect(contactOnly.body.items[0]).toMatchObject({ unitPrice: "1170.00", lineTotal: "3510.00" });
+    expect(
+      (
+        await admin
+          .patch(`/api/admin/orders/${editable.body.id}`)
+          .set(adminHeaders)
+          .send({ ...details, updatedAt: changed.body.updatedAt, items: [{ variantId: alternateId, quantity: 3 }] })
+      ).status,
+    ).toBe(409);
+    const noStock = await admin
+      .patch(`/api/admin/orders/${editable.body.id}`)
+      .set(adminHeaders)
+      .send({
+        ...details,
+        updatedAt: contactOnly.body.updatedAt,
+        items: [{ variantId: alternateId, quantity: 6 }],
+      });
+    expect(noStock.status).toBe(409);
+    expect(await db.productVariant.findUniqueOrThrow({ where: { id: alternateId } })).toMatchObject({ stockReserved: 3 });
+    expect((await admin.patch(`/api/admin/orders/${editable.body.id}/status`).set(adminHeaders).send({ status: "CONFIRMED" })).status).toBe(200);
+
+    const complete = await request(app)
+      .post("/api/orders")
+      .send({ ...details, items: [{ variantId: defaultId, quantity: 4 }] });
+    expect(complete.status).toBe(201);
+    const confirmed = await admin.patch(`/api/admin/orders/${complete.body.id}/status`).set(adminHeaders).send({ status: "CONFIRMED" });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.items[0]).toMatchObject({ sku: "TEST-M", quantity: 4, unitPrice: "900.00", lineTotal: "3600.00" });
+    expect(
+      (
+        await admin
+          .patch(`/api/admin/orders/${complete.body.id}`)
+          .set(adminHeaders)
+          .send({ ...details, updatedAt: confirmed.body.updatedAt, items: [{ variantId: defaultId, quantity: 4 }] })
+      ).status,
+    ).toBe(409);
+    expect(await db.productVariant.findUniqueOrThrow({ where: { id: defaultId } })).toMatchObject({ stockOnHand: 0, stockReserved: 0 });
+    expect((await admin.get("/api/admin/orders")).body.items).toHaveLength(3);
   });
   it("reorders a complete owned image list atomically and rejects stale lists", async () => {
     expect(

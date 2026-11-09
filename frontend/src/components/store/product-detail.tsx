@@ -3,8 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Expand, X, Check } from "lucide-react";
+import { ArrowLeft, Expand, X, Check, ShoppingBag } from "lucide-react";
 import type { Product, ProductImage } from "@/schemas/api";
+import { addCartLine } from "@/lib/cart";
 import { money } from "@/lib/utils";
 import { ColorSwatch } from "./color-swatch";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -24,12 +25,12 @@ function Gallery({ images, name }: { images: ProductImage[]; name: string }) {
           </span>
         </DialogTrigger>
         <DialogContent className="image-dialog" showCloseButton={false}>
-            <DialogTitle className="sr-only">{name}</DialogTitle>
-            <DialogDescription className="sr-only">Enlarged product photograph</DialogDescription>
-            <Image src={image.imageUrl} alt={image.alt || name} fill sizes="90vw" style={{ objectFit: "contain" }} />
-            <DialogClose className="dialog-close" aria-label="Close image">
-              <X size={22} />
-            </DialogClose>
+          <DialogTitle className="sr-only">{name}</DialogTitle>
+          <DialogDescription className="sr-only">Enlarged product photograph</DialogDescription>
+          <Image src={image.imageUrl} alt={image.alt || name} fill sizes="90vw" style={{ objectFit: "contain" }} />
+          <DialogClose className="dialog-close" aria-label="Close image">
+            <X size={22} />
+          </DialogClose>
         </DialogContent>
       </Dialog>
       <div className="gallery-thumbnails">
@@ -46,7 +47,11 @@ export function ProductDetail({ product, initialVariant }: { product: Product; i
   const active = product.variants.filter((variant) => variant.isActive);
   const [selectedId, setSelectedId] = useState(active.find((variant) => variant.id === initialVariant)?.id || active.find((variant) => variant.isDefault)?.id || active[0]?.id);
   const selected = active.find((variant) => variant.id === selectedId) ?? active[0];
+  const [quantity, setQuantity] = useState(1);
+  const [cartMessage, setCartMessage] = useState("");
   if (!selected) return <p className="empty-state">No variants are currently available.</p>;
+  const maximumQuantity = Math.min(20, selected.availableQuantity);
+  const visibleQuantity = Math.min(quantity, maximumQuantity);
   const attributeNames = [...new Set(active.flatMap((variant) => Object.keys(variant.attributes)))];
   const variantImages = product.images.filter((image) => image.variantId === selected.id);
   const images = variantImages.length ? variantImages : product.images.filter((image) => !image.variantId);
@@ -100,13 +105,45 @@ export function ProductDetail({ product, initialVariant }: { product: Product; i
               </fieldset>
             ))}
           </div>
+          <div className="add-to-cart-row">
+            <label>
+              Quantity
+              <input aria-label="Quantity" type="number" min={maximumQuantity ? 1 : 0} max={maximumQuantity} step="1" value={visibleQuantity} disabled={!maximumQuantity} onChange={(event) => setQuantity(Math.max(1, Math.min(maximumQuantity, Math.floor(Number(event.target.value) || 1))))} />
+            </label>
+
+            <Button
+              disabled={!maximumQuantity}
+              onClick={() => {
+                addCartLine({
+                  variantId: selected.id,
+                  productId: product.id,
+                  slug: product.slug,
+                  productName: product.name,
+                  variantName: selected.name,
+                  sku: selected.sku,
+                  unitPrice: selected.effectivePrice,
+                  imageUrl: images[0]?.imageUrl || product.images[0]?.imageUrl || "",
+                  availableQuantity: maximumQuantity,
+                  quantity: visibleQuantity,
+                });
+                setCartMessage(`${selected.name} added to cart`);
+              }}
+            >
+              <ShoppingBag size={16} /> {maximumQuantity ? "Add to cart" : "Out of stock"}
+            </Button>
+          </div>
+          <div className="available-stock">{maximumQuantity} in stock</div>
+
+          {cartMessage && (
+            <p className="cart-feedback" role="status">
+              {cartMessage}
+            </p>
+          )}
           <div className="product-meta">
             <span>Selected option</span>
             <strong>{selected.name}</strong>
             <span>SKU</span>
             <code>{selected.sku}</code>
-            <span>Currency</span>
-            <span>Bangladeshi Taka (BDT)</span>
           </div>
         </div>
       </div>

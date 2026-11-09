@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { ProductCard } from "./product-card";
 import { ProductDetail } from "./product-detail";
 import type { Product } from "../../schemas/api";
+import { setCartQuantity } from "@/lib/cart";
 
 vi.mock("next/image", () => ({
   default: ({ alt }: { alt: string }) => <span role="img" aria-label={alt} />,
@@ -15,7 +16,10 @@ vi.mock("next/link", () => ({
     </a>
   ),
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 const product: Product = {
   id: "product",
@@ -49,6 +53,8 @@ const product: Product = {
       attributes: { size: "M", color: "White" },
       isActive: true,
       isDefault: true,
+      inStock: true,
+      availableQuantity: 8,
     },
     {
       id: "large",
@@ -60,6 +66,8 @@ const product: Product = {
       attributes: { size: "XL", color: "White" },
       isActive: true,
       isDefault: false,
+      inStock: true,
+      availableQuantity: 12,
     },
   ],
 };
@@ -80,6 +88,20 @@ describe("public product controls", () => {
   it("honors a linked initial variant", () => {
     render(<ProductDetail product={product} initialVariant="large" />);
     expect(screen.getByText("SHIRT-XL")).toBeVisible();
+  });
+  it("caps product selection and cart quantity at available stock", () => {
+    render(<ProductDetail product={product} />);
+    const quantity = screen.getByRole("spinbutton", { name: "Quantity" });
+    fireEvent.change(quantity, { target: { value: "10" } });
+    expect(quantity).toHaveValue(8);
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+    setCartQuantity("medium", 10);
+    expect(JSON.parse(localStorage.getItem("hazelnut-cart") || "[]")).toMatchObject([{ variantId: "medium", quantity: 8, availableQuantity: 8, unitPrice: "900.00" }]);
+  });
+  it("does not allow adding an unavailable variant", () => {
+    const unavailable = { ...product, variants: product.variants.map((variant) => ({ ...variant, inStock: false, availableQuantity: 0 })) };
+    render(<ProductDetail product={unavailable} />);
+    expect(screen.getByRole("button", { name: "Out of stock" })).toBeDisabled();
   });
   it("uses the override original price, not an unrelated product base price", () => {
     const equalPrices = {

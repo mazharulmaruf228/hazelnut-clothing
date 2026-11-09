@@ -21,6 +21,7 @@ export const variantInput = z
     attributes: attributes.default({}),
     isDefault: z.boolean().default(false),
     isActive: z.boolean().default(true),
+    stockOnHand: z.number().int().min(0).max(1_000_000).default(0),
   })
   .strict();
 export const productInput = z
@@ -72,8 +73,41 @@ export const variantPatch = variantInput
     attributes: variantInput.shape.attributes.removeDefault(),
     isDefault: variantInput.shape.isDefault.removeDefault(),
     isActive: variantInput.shape.isActive.removeDefault(),
+    stockOnHand: variantInput.shape.stockOnHand.removeDefault(),
   })
   .partial();
+export const createOrderInput = z
+  .object({
+    customerName: z.string().trim().min(1).max(120),
+    email: z.email().max(254),
+    phone: z.string().trim().min(7).max(30),
+    deliveryAddress: z.string().trim().min(5).max(500),
+    deliveryArea: z.string().trim().min(1).max(120),
+    customerNote: z.string().trim().max(1000).default(""),
+    items: z
+      .array(z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(20) }).strict())
+      .min(1)
+      .max(20)
+      .refine((items) => new Set(items.map((item) => item.variantId)).size === items.length, "Each variant can appear only once"),
+  })
+  .strict();
+export const orderStatusInput = z.object({ status: z.enum(["CONFIRMED", "REJECTED"]) }).strict();
+export const orderEditInput = z
+  .object({
+    updatedAt: z.iso.datetime(),
+    customerName: z.string().trim().min(1).max(120),
+    email: z.email().max(254),
+    phone: z.string().trim().min(7).max(30),
+    deliveryAddress: z.string().trim().min(5).max(500),
+    deliveryArea: z.string().trim().min(1).max(120),
+    customerNote: z.string().trim().max(1000),
+    items: z
+      .array(z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(20) }).strict())
+      .min(1)
+      .max(20)
+      .refine((items) => new Set(items.map((item) => item.variantId)).size === items.length, "Each variant can appear only once"),
+  })
+  .strict();
 export const categoryPatch = categoryInput
   .extend({
     description: categoryInput.shape.description.removeDefault(),

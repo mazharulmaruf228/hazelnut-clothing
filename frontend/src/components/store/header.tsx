@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowUpRight, Search, UserRound } from "lucide-react";
 import { storeName } from "@/lib/site";
+import { CartIndicator } from "./cart-indicator";
 
 export function Header() {
   return (
@@ -18,6 +19,7 @@ export function Header() {
             </Link>
           </nav>
           <div className="header-tools">
+            <CartIndicator />
             <Link href="/products#catalogue-search" className="icon-link" aria-label="Search products" title="Search products">
               <Search size={20} />
             </Link>

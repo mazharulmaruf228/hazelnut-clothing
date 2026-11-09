@@ -2,7 +2,8 @@
 
 Next.js storefront and CMS with a separate Express REST API, Prisma/PostgreSQL,
 Cloudinary media and email/password plus Google admin authentication. BDT is the
-single currency. No cart, checkout, payments, orders or inventory system.
+single currency. Guest cart, inventory reservations, and manual order review are
+available; online payments and delivery integrations are not yet included.
 
 ## Structure
 
@@ -103,6 +104,22 @@ Use the CMS to add additional ADMIN/EDITOR users.
   The last active ADMIN cannot be disabled, demoted or deleted.
 - Category deletion is restricted while products/children refer to it; reassign
   those records first. Reparenting checks for cycles inside serialized mutations.
+
+## Commerce Rules
+
+- The guest cart is stored in the browser. Order submission sends variant IDs and
+  quantities only; the API rechecks published/active state and calculates prices.
+- Stock is tracked per variant. New orders reserve stock atomically and enter
+  `PENDING_REVIEW`; admin confirmation consumes the reservation, while rejection
+  releases it. Pending reservations do not expire automatically yet.
+- Existing products start with zero stock after migration. Set stock in the
+  product's variant editor before accepting orders. The development seed assigns
+  ten units to newly created demo variants.
+- Orders are unpaid. Delivery charges are not calculated in checkout; admins
+  must confirm delivery details with the customer before confirming the order.
+- `backend/openapi.yaml` documents the public order submission and admin review
+  endpoints. No customer accounts, payment processing, or carrier integration is
+  included in this stage.
 
 ## Verification
 

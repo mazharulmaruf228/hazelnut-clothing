@@ -70,6 +70,9 @@ test("browse, search, choose variants and inspect real images", async ({ page },
   else await variant.click();
   await expect(variant).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".detail-price")).toContainText("1,791");
+  const quantity = page.getByRole("spinbutton", { name: "Quantity" });
+  await quantity.fill("12");
+  await expect(quantity).toHaveValue("10");
   await expect(page).toHaveURL(/variant=/);
   const enlarge = page.getByTitle("Enlarge product image");
   if (testInfo.project.name === "mobile") await enlarge.tap();
@@ -81,6 +84,43 @@ test("browse, search, choose variants and inspect real images", async ({ page },
     path: testInfo.outputPath("product.png"),
     fullPage: true,
   });
+});
+test("guest checkout reserves stock for admin review", async ({ page }) => {
+  const runId = `${Date.now()}-${test.info().project.name}`;
+  const customerName = `Guest Customer ${test.info().project.name}`;
+  const email = `guest-${runId}@example.invalid`;
+  await page.goto("/products/everyday-oxford-shirt");
+  await page.getByRole("button", { name: "Add to cart", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Cart, 1 item" })).toBeVisible();
+  await page.getByRole("link", { name: "Cart, 1 item" }).click();
+  await expect(page.getByRole("heading", { name: "Shopping bag" })).toBeVisible();
+  await page.getByRole("link", { name: "Continue to checkout" }).click();
+  await page.getByLabel("Name", { exact: true }).fill(customerName);
+  await page.getByLabel("Email", { exact: true }).fill(email);
+  await page.getByLabel("Phone", { exact: true }).fill("+8801700000000");
+  await page.getByLabel("Delivery area", { exact: true }).fill("Dhaka");
+  await page.getByLabel("Delivery address", { exact: true }).fill("12 Example Road, Dhaka");
+  await page.getByRole("button", { name: "Place order for review" }).click();
+  await expect(page.getByRole("heading", { name: "Thank you." })).toBeVisible();
+
+  await login(page);
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  const orderRow = page.getByRole("row").filter({ hasText: email });
+  await expect(orderRow).toContainText("PENDING REVIEW");
+  await orderRow.getByRole("button", { name: `Edit order for ${customerName}` }).click();
+  const editor = page.getByRole("dialog");
+  await expect(editor.getByRole("heading", { name: /Edit order/ })).toBeVisible();
+  await editor.getByLabel("Customer name").fill("Updated Guest");
+  await editor.getByRole("textbox", { name: "Delivery address" }).fill("14 Example Road, Dhaka");
+  await editor.getByLabel("Quantity for item 1").fill("2");
+  await expect(editor.locator(".order-edit-total")).toContainText("3,402");
+  await editor.getByRole("button", { name: "Save order" }).click();
+  await expect(editor).not.toBeVisible();
+  await expect(orderRow).toContainText("Updated Guest");
+  await expect(orderRow).toContainText("14 Example Road, Dhaka");
+  await expect(orderRow).toContainText("PENDING REVIEW");
+  await orderRow.getByRole("button", { name: "Confirm order" }).click();
+  await expect(orderRow).toContainText("CONFIRMED");
 });
 test("featured carousel respects reduced motion and supports keyboard navigation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -163,8 +203,10 @@ test("admin creates a category, draft and dynamic variant", async ({ page }, tes
   await variant.getByRole("button", { name: "Attribute", exact: true }).click();
   await variant.getByLabel("Attribute", { exact: true }).fill("size");
   await variant.getByLabel("Value", { exact: true }).fill("L");
+  await variant.getByLabel("Stock on hand").fill("5");
   await variant.getByRole("button", { name: "Save variant" }).click();
   await expect(page.locator("table")).toContainText("size: L");
+  await expect(page.locator("table")).toContainText("5 / 0");
   await selectRadixOption(page, "Status", "ARCHIVED");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByText("Product saved.", { exact: true })).toBeVisible();
