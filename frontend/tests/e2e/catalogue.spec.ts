@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { productSchema } from "../../src/schemas/api";
 import AxeBuilder from "@axe-core/playwright";
@@ -99,8 +100,9 @@ test("guest checkout reserves stock for admin review", async ({ page }) => {
   await page.getByLabel("Name", { exact: true }).fill(customerName);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Phone", { exact: true }).fill("+8801700000000");
-  await page.getByLabel("Delivery area", { exact: true }).fill("Dhaka");
-  await page.getByLabel("Delivery address", { exact: true }).fill("12 Example Road, Dhaka");
+  await page.getByLabel("District", { exact: true }).selectOption("Dhaka");
+  await page.getByLabel("Postcode", { exact: true }).fill("1207");
+  await page.getByLabel("House / road", { exact: true }).fill("12 Example Road, Dhaka");
   await page.getByRole("button", { name: "Place order for review" }).click();
   await expect(page.getByRole("heading", { name: "Thank you." })).toBeVisible();
 
@@ -179,7 +181,7 @@ test("story image fold reverses with scroll and stays open for reduced motion", 
 });
 test("admin creates a category, draft and dynamic variant", async ({ page }, testInfo) => {
   await login(page);
-  const suffix = testInfo.project.name;
+  const suffix = `${testInfo.project.name}-${randomUUID().slice(0, 8)}`;
   await page.getByRole("link", { name: "Categories", exact: true }).click();
   await page.getByRole("button", { name: "Add category" }).click();
   await page.getByLabel("Name", { exact: true }).fill(`Browser ${suffix}`);
@@ -201,7 +203,7 @@ test("admin creates a category, draft and dynamic variant", async ({ page }, tes
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page).toHaveURL(/\/admin\/products\/[0-9a-f-]+$/);
   await page.getByRole("button", { name: "Add variant", exact: true }).click();
-  const variant = page.locator(".variant-editor");
+  const variant = page.getByRole("form", { name: "Variant editor" });
   await variant.getByLabel("Name", { exact: true }).fill("Large");
   await variant.getByLabel("SKU", { exact: true }).fill(`BROWSER-${suffix}-L`);
   await variant.getByRole("button", { name: "Attribute", exact: true }).click();
