@@ -95,6 +95,7 @@ try {
               sku: `${garment.slug.toUpperCase()}-${size}`,
               name: `${garment.color} / ${size}`,
               attributes: { color: garment.color, size },
+              stockOnHand: 10,
               isDefault: index === 1,
               price: size === "XL" ? String(Number(garment.price) + 100) : null,
             })),

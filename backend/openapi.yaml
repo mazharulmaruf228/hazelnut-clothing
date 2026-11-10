@@ -5,9 +5,12 @@ info:
   version: 1.0.0
   description: >-
     Express owns persistence. Public endpoints return only published products and
-    active variants. Amounts are decimal strings in BDT. ADMIN and EDITOR may
-    manage catalogue content; only ADMIN manages users. Cookie-authenticated
-    mutations require an exact trusted Origin and x-csrf-token from GET /auth/csrf.
+    active variants. Guest orders revalidate prices, calculate district-based
+    delivery charges, and reserve per-variant stock for manual review; payments
+    and delivery integrations are not included.
+    Amounts are decimal strings in BDT. ADMIN and EDITOR may manage catalogue
+    content; only ADMIN manages users. Cookie-authenticated mutations require an
+    exact trusted Origin and x-csrf-token from GET /auth/csrf.
 servers:
   - url: /api
 tags:
@@ -15,6 +18,7 @@ tags:
   - name: Authentication
   - name: Catalogue management
   - name: Users
+  - name: Orders
 paths:
   /health:
     get:
@@ -56,6 +60,45 @@ paths:
       summary: Categories with published products or published descendants
       responses:
         "200": { description: Category items, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Category" } } } } } } }
+  /orders:
+    get:
+      tags: [Orders]
+      summary: Static Bangladesh district delivery options and rates
+      responses:
+        "200": { description: Districts with Tk 80 Dhaka / Tk 100 non-Dhaka charges }
+    post:
+      tags: [Orders]
+      summary: Place an unpaid guest order and reserve stock for manual review
+      description: Server recalculates current prices and delivery charge from the selected district and accepts no client-supplied prices or fees. Limited to 10 attempts per IP per 15 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrder" }
+      responses:
+        "201":
+          {
+            description: Pending-review order created,
+            content: { application/json: { schema: { type: object, required: [id, status, subtotal, deliveryCharge, total], properties: { id: { type: string, format: uuid }, status: { type: string, const: PENDING_REVIEW }, subtotal: { $ref: "#/components/schemas/Money" }, deliveryCharge: { $ref: "#/components/schemas/Money" }, total: { $ref: "#/components/schemas/Money" } } } } },
+          }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /orders/lookup:
+    post:
+      tags: [Orders]
+      summary: Look up one guest order by order number and matching email or phone
+      description: Limited to five attempts per IP per 15 minutes. The contact must match the order.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderLookup" }
+      responses:
+        "200": { description: Matching order snapshot with item subtotal, delivery charge, and total, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /auth/csrf:
     get:
       tags: [Authentication]
@@ -142,6 +185,45 @@ paths:
       security: [{ adminCookie: [] }]
       responses:
         "200": { description: Product/status/category counts; pending users only for ADMIN }
+  /admin/orders:
+    get:
+      summary: List guest orders for manual review
+      tags: [Orders]
+      security: [{ adminCookie: [] }]
+      responses:
+        "200": { description: Order snapshots, customer delivery details, item subtotals, delivery charges, grand totals, and current review states, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Order" } } } } } } }
+  /admin/orders/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      summary: Edit a pending order's items and customer details
+      tags: [Orders]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      description: Requires the latest updatedAt. Item changes recalculate current prices and adjust stock reservations atomically; district changes recalculate the delivery charge. Legacy orders keep their existing free-form address and zero charge until a district is explicitly set. Contact-only edits preserve item price snapshots. Confirmed and rejected orders cannot be edited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderEdit" }
+      responses:
+        "200": { description: Edited order remains pending review, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/orders/{id}/status:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      summary: Confirm or reject a pending order
+      tags: [Orders]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      description: Confirmation consumes reserved stock. Rejection releases it. Only pending orders can be reviewed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [status], properties: { status: { type: string, enum: [CONFIRMED, REJECTED] } } }
+      responses:
+        "200": { description: Updated order and item snapshots, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "409": { $ref: "#/components/responses/Error" }
   /admin/products:
     get:
       tags: [Catalogue management]
@@ -411,6 +493,7 @@ components:
         attributes: { type: object, maxProperties: 20, additionalProperties: { type: string, minLength: 1, maxLength: 100 } }
         isDefault: { type: boolean }
         isActive: { type: boolean }
+        stockOnHand: { type: integer, minimum: 0, maximum: 1000000, default: 0 }
     Product:
       allOf:
         - { $ref: "#/components/schemas/ProductInput" }
@@ -422,7 +505,22 @@ components:
             currency: { type: string, const: BDT }
             fromPrice: { $ref: "#/components/schemas/Money" }
             hasPriceRange: { type: boolean }
-            variants: { type: array, items: { allOf: [{ $ref: "#/components/schemas/VariantInput" }, { type: object, properties: { id: { type: string }, effectivePrice: { $ref: "#/components/schemas/Money" } } }] } }
+            variants:
+              {
+                type: array,
+                items:
+                  {
+                    allOf:
+                      [
+                        { $ref: "#/components/schemas/VariantInput" },
+                        {
+                          type: object,
+                          required: [id, effectivePrice, inStock, availableQuantity],
+                          properties: { id: { type: string }, effectivePrice: { $ref: "#/components/schemas/Money" }, inStock: { type: boolean }, stockReserved: { type: integer }, availableQuantity: { type: integer, minimum: 0 } },
+                        },
+                      ],
+                  },
+              }
             images: { type: array, items: { type: object, properties: { id: { type: string }, imageUrl: { type: string, format: uri }, alt: { type: string }, sortOrder: { type: integer }, variantId: { type: [string, "null"] } } } }
     ProductList:
       type: object
@@ -433,3 +531,99 @@ components:
         page: { type: integer }
         pageSize: { type: integer }
         totalPages: { type: integer }
+    BangladeshDistrict:
+      type: string
+      enum: [Bagerhat, Bandarban, Barguna, Barishal, Bhola, Bogura, Brahmanbaria, Chandpur, Chattogram, Chuadanga, "Cox's Bazar", Cumilla, Dhaka, Dinajpur, Faridpur, Feni, Gaibandha, Gazipur, Gopalganj, Habiganj, Jamalpur, Jashore, Jhalokati, Jhenaidah, Joypurhat, Khagrachhari, Khulna, Kishoreganj, Kurigram, Kushtia, Lakshmipur, Lalmonirhat, Madaripur, Magura, Manikganj, Meherpur, Moulvibazar, Munshiganj, Mymensingh, Naogaon, Narail, Narayanganj, Narsingdi, Natore, Netrokona, Nilphamari, Noakhali, Pabna, Panchagarh, Patuakhali, Pirojpur, Rajbari, Rajshahi, Rangamati, Rangpur, Satkhira, Shariatpur, Sherpur, Sirajganj, Sunamganj, Sylhet, Tangail, Thakurgaon, Chapainawabganj]
+    OrderLookup:
+      type: object
+      additionalProperties: false
+      required: [orderNumber]
+      properties:
+        orderNumber: { type: string, format: uuid }
+        email: { type: string, format: email, maxLength: 254 }
+        phone: { type: string, minLength: 7, maxLength: 30 }
+      oneOf:
+        - required: [email]
+        - required: [phone]
+    CreateOrder:
+      type: object
+      additionalProperties: false
+      required: [customerName, email, phone, deliveryAddress, district, postcode, items]
+      properties:
+        customerName: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email, maxLength: 254 }
+        phone: { type: string, minLength: 7, maxLength: 30 }
+        deliveryAddress: { type: string, minLength: 5, maxLength: 500 }
+        district: { $ref: "#/components/schemas/BangladeshDistrict" }
+        postcode: { type: string, pattern: "^[0-9]{4}$" }
+        customerNote: { type: string, maxLength: 1000, default: "" }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [variantId, quantity]
+            properties:
+              variantId: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1, maximum: 20 }
+    Order:
+      type: object
+      required: [id, status, customerName, email, phone, deliveryAddress, deliveryArea, district, postcode, customerNote, subtotal, deliveryCharge, total, items, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [PENDING_REVIEW, CONFIRMED, REJECTED] }
+        customerName: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        deliveryAddress: { type: string }
+        deliveryArea: { type: string }
+        district: { oneOf: [{ $ref: "#/components/schemas/BangladeshDistrict" }, { type: "null" }] }
+        postcode: { type: [string, "null"], pattern: "^[0-9]{4}$" }
+        customerNote: { type: string }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        deliveryCharge: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, productId, variantId, productName, variantName, sku, quantity, unitPrice, lineTotal]
+            properties:
+              id: { type: string, format: uuid }
+              productId: { type: [string, "null"], format: uuid }
+              variantId: { type: [string, "null"], format: uuid }
+              productName: { type: string }
+              variantName: { type: string }
+              sku: { type: string }
+              quantity: { type: integer }
+              unitPrice: { $ref: "#/components/schemas/Money" }
+              lineTotal: { $ref: "#/components/schemas/Money" }
+    OrderEdit:
+      type: object
+      additionalProperties: false
+      required: [updatedAt, customerName, email, phone, deliveryAddress, deliveryArea, district, postcode, customerNote, items]
+      properties:
+        updatedAt: { type: string, format: date-time, description: Last-seen order timestamp; stale edits conflict }
+        customerName: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email, maxLength: 254 }
+        phone: { type: string, minLength: 7, maxLength: 30 }
+        deliveryAddress: { type: string, minLength: 5, maxLength: 500 }
+        deliveryArea: { type: string, maxLength: 120 }
+        district: { oneOf: [{ $ref: "#/components/schemas/BangladeshDistrict" }, { type: "null" }] }
+        postcode: { oneOf: [{ type: string, pattern: "^[0-9]{4}$" }, { type: "null" }] }
+        customerNote: { type: string, maxLength: 1000 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [variantId, quantity]
+            properties:
+              variantId: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1, maximum: 20 }

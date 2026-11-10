@@ -2,7 +2,8 @@
 
 Next.js storefront and CMS with a separate Express REST API, Prisma/PostgreSQL,
 Cloudinary media and email/password plus Google admin authentication. BDT is the
-single currency. No cart, checkout, payments, orders or inventory system.
+single currency. Guest cart, inventory reservations, and manual order review are
+available; online payments and delivery integrations are not yet included.
 
 ## Structure
 
@@ -103,6 +104,27 @@ Use the CMS to add additional ADMIN/EDITOR users.
   The last active ADMIN cannot be disabled, demoted or deleted.
 - Category deletion is restricted while products/children refer to it; reassign
   those records first. Reparenting checks for cycles inside serialized mutations.
+
+## Commerce Rules
+
+- The guest cart is stored in the browser. Order submission sends variant IDs and
+  quantities only; the API rechecks published/active state and calculates prices.
+- Stock is tracked per variant. New orders reserve stock atomically and enter
+  `PENDING_REVIEW`; admin confirmation consumes the reservation, while rejection
+  releases it. Pending reservations do not expire automatically yet.
+- Existing products start with zero stock after migration. Set stock in the
+  product's variant editor before accepting orders. The development seed assigns
+  ten units to newly created demo variants.
+- Orders are unpaid. Checkout collects a Bangladesh district and postcode and
+  calculates Tk 80 delivery for Dhaka district or Tk 100 for any other district.
+  The backend determines and stores the fee; admins can change the district on a
+  pending order to recalculate it. Existing orders retain their free-form address
+  and start with no delivery fee.
+- Guests can look up one order using its order number and the checkout email or
+  phone number. There are no customer accounts or all-orders-by-contact listing.
+- `backend/openapi.yaml` documents the public order submission and admin review
+  endpoints. No customer accounts, payment processing, or carrier integration is
+  included in this stage.
 
 ## Verification
 

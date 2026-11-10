@@ -17,6 +17,12 @@ enum ProductStatus {
   ARCHIVED
 }
 
+enum OrderStatus {
+  PENDING_REVIEW
+  CONFIRMED
+  REJECTED
+}
+
 model Category {
   id          String     @id @default(uuid())
   name        String
@@ -44,6 +50,7 @@ model Product {
   discountPercentage Decimal          @default(0) @db.Decimal(5, 2)
   variants           ProductVariant[]
   images             ProductImage[]
+  orderItems         OrderItem[]
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
@@ -61,10 +68,51 @@ model ProductVariant {
   attributes Json           @db.JsonB
   isDefault  Boolean        @default(false)
   isActive   Boolean        @default(true)
+  stockOnHand Int           @default(0)
+  stockReserved Int         @default(0)
   images     ProductImage[]
+  orderItems OrderItem[]
 
   @@unique([id, productId])
   @@index([productId, isActive])
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  status          OrderStatus @default(PENDING_REVIEW)
+  customerName    String
+  email           String
+  phone           String
+  deliveryAddress String
+  deliveryArea    String      @default("")
+  district        String?
+  postcode        String?
+  customerNote    String      @default("")
+  subtotal        Decimal     @db.Decimal(12, 2)
+  deliveryCharge  Decimal     @default(0) @db.Decimal(12, 2)
+  items           OrderItem[]
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model OrderItem {
+  id          String         @id @default(uuid())
+  orderId     String
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variantId   String?
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  productName String
+  variantName String
+  sku         String
+  quantity    Int
+  unitPrice   Decimal        @db.Decimal(12, 2)
+  lineTotal   Decimal        @db.Decimal(12, 2)
+
+  @@index([orderId])
 }
 
 model ProductImage {

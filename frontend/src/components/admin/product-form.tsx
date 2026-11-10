@@ -137,13 +137,13 @@ export function ProductForm({ product }: { product?: Product }) {
   }
   return (
     <>
-      <Link className="back-link" href="/admin/products">
+      <Link className="mb-[22px] inline-flex items-center gap-2 text-xs" href="/admin/products">
         <ArrowLeft size={15} /> Products
       </Link>
-      <div className="admin-title">
+      <div className="mb-8 flex items-center justify-between gap-5 max-[700px]:mb-6 max-[700px]:items-start max-[700px]:gap-3">
         <div>
-          <span className="eyebrow">Catalogue / {product ? "Edit product" : "New product"}</span>
-          <h1>{product?.name || "Add product"}</h1>
+          <span className="text-[9px] uppercase tracking-[1.6px] text-muted">Catalogue / {product ? "Edit product" : "New product"}</span>
+          <h1 className="mt-2 overflow-wrap-anywhere font-sans text-[28px] font-medium leading-[1.2] max-[700px]:text-[25px]">{product?.name || "Add product"}</h1>
         </div>
         {product?.status === "PUBLISHED" && (
           <Button asChild variant="outline">
@@ -154,9 +154,9 @@ export function ProductForm({ product }: { product?: Product }) {
         )}
       </div>
       <form className="product-edit-form" onSubmit={handleSubmit(submit)}>
-        <section className="form-section">
-          <h2>Product details</h2>
-          <div className="form-grid">
+        <section className="border-t border-line py-[25px]">
+          <h2 className="mb-5">Product details</h2>
+          <div className="grid grid-cols-2 gap-5 max-[700px]:grid-cols-1 max-[700px]:gap-4">
             <Label>
               Name
               <Input
@@ -180,7 +180,7 @@ export function ProductForm({ product }: { product?: Product }) {
                 })}
               />
             </Label>
-            <Label className="full-width">
+            <Label className="col-span-full max-[700px]:col-auto">
               Description
               <Textarea rows={5} {...register("description")} />
             </Label>
@@ -205,14 +205,14 @@ export function ProductForm({ product }: { product?: Product }) {
                 )}
               />
             </Label>
-            <div className="form-link">
+            <div className="flex items-center text-xs underline">
               <Link href="/admin/categories">Manage categories</Link>
             </div>
           </div>
         </section>
-        <section className="form-section">
-          <h2>Pricing & publishing</h2>
-          <div className="form-grid">
+        <section className="border-t border-line py-[25px]">
+          <h2 className="mb-5">Pricing & publishing</h2>
+          <div className="grid grid-cols-2 gap-5 max-[700px]:grid-cols-1 max-[700px]:gap-4">
             <Label>
               Base price (BDT)
               <Input inputMode="decimal" {...register("price")} />
@@ -240,12 +240,8 @@ export function ProductForm({ product }: { product?: Product }) {
                 )}
               />
             </Label>
-            <Label className="checkbox-label">
-              <Controller
-                control={control}
-                name="featured"
-                render={({ field }) => <Checkbox id="featured" name={field.name} checked={field.value} onCheckedChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />}
-              />
+            <Label className="flex min-h-10 items-center gap-[9px]">
+              <Controller control={control} name="featured" render={({ field }) => <Checkbox id="featured" name={field.name} checked={field.value} onCheckedChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />} />
               <span>Featured product</span>
             </Label>
             {!product && (
@@ -257,7 +253,7 @@ export function ProductForm({ product }: { product?: Product }) {
           </div>
         </section>
         {Object.keys(errors).length > 0 && (
-          <div className="status-message" role="alert">
+          <div className="mt-[15px] rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]" role="alert">
             {Object.entries(errors).map(([field, error]) => (
               <p key={field}>
                 {field}: {error.message}
@@ -266,16 +262,16 @@ export function ProductForm({ product }: { product?: Product }) {
           </div>
         )}
         {message && (
-          <p className={`status-message ${message.success ? "success" : ""}`} role="status">
+          <p className={`mt-[15px] rounded-[4px] border p-3 text-xs ${message.success ? "border-[#b9d1bf] bg-[#eff7ef] text-[#285039]" : "border-[#e4bfb4] bg-[#fff1ec] text-[#873723]"}`} role="status">
             {message.text}
           </p>
         )}
-        <div className="form-actions">
+        <div className="mt-[22px] flex flex-wrap items-center gap-3 text-[11px]">
           <Button type="submit" disabled={isLoading}>
             <Save size={16} />
             {isLoading ? "Saving..." : product ? "Save changes" : "Create draft"}
           </Button>
-          {isDirty && <span className="muted">Unsaved changes</span>}
+          {isDirty && <span className="text-muted">Unsaved changes</span>}
         </div>
       </form>
       {product && (

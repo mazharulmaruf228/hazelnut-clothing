@@ -51,8 +51,8 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
     })),
   };
   return (
-    <div className="detail-container">
-      <nav className="breadcrumbs" aria-label="Breadcrumb">
+    <div className="mx-auto max-w-[1350px] px-[5%] pt-[22px] pb-[70px] max-[700px]:pt-4">
+      <nav className="mb-6 flex flex-wrap gap-2 text-[11px] text-muted max-[700px]:text-[10px]" aria-label="Breadcrumb">
         <Link href="/">Home</Link>
         <span>/</span>
         <Link href={`/categories/${product.category.slug}`}>{product.category.name}</Link>

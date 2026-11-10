@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { productSchema } from "../../src/schemas/api";
 import AxeBuilder from "@axe-core/playwright";
@@ -44,15 +45,16 @@ test("server-rendered catalogue matches the independent API contract", async ({ 
 test("browse, search, choose variants and inspect real images", async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  await expect(page.locator(".featured-carousel-slide")).toHaveCount(6);
-  await expect(page.getByRole("region", { name: "Featured products" })).toBeVisible();
-  for (const image of await page.locator(".featured-carousel-image img").all()) {
+  const carousel = page.getByRole("region", { name: "Featured products" });
+  await expect(carousel.locator('[role="group"][aria-roledescription="slide"]')).toHaveCount(6);
+  await expect(carousel).toBeVisible();
+  for (const image of await carousel.locator('[role="group"] a img').all()) {
     await image.scrollIntoViewIfNeeded();
     await expect.poll(() => image.evaluate((node) => (node as HTMLImageElement).complete && (node as HTMLImageElement).naturalWidth > 0)).toBe(true);
     await image.evaluate((node) => (node as HTMLImageElement).decode());
   }
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
-  await page.locator(".collection-banner img").evaluate((node) => (node as HTMLImageElement).decode());
+  await page.getByRole("img", { name: "A curated rail of everyday clothing" }).evaluate((node) => (node as HTMLImageElement).decode());
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations.filter((item) => ["serious", "critical"].includes(item.impact || ""))).toEqual([]);
@@ -62,14 +64,17 @@ test("browse, search, choose variants and inspect real images", async ({ page },
   await page.getByRole("link", { name: "The collection", exact: true }).click();
   await page.getByRole("searchbox", { name: "Search products" }).fill("Oxford");
   await page.getByRole("button", { name: "Apply search and sort" }).click();
-  await expect(page.locator(".product-card")).toHaveCount(1);
-  await page.locator(".product-caption a").first().click();
+  await expect(page.locator("article")).toHaveCount(1);
+  await page.locator("article a").last().click();
   await expect(page.getByRole("heading", { name: "Everyday Oxford Shirt", exact: true })).toBeVisible();
   const variant = page.getByRole("button", { name: "XL", exact: true });
   if (testInfo.project.name === "mobile") await variant.tap();
   else await variant.click();
   await expect(variant).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(".detail-price")).toContainText("1,791");
+  await expect(page.getByText("BDT 1,791.00")).toBeVisible();
+  const quantity = page.getByRole("spinbutton", { name: "Quantity" });
+  await quantity.fill("12");
+  await expect(quantity).toHaveValue("10");
   await expect(page).toHaveURL(/variant=/);
   const enlarge = page.getByTitle("Enlarge product image");
   if (testInfo.project.name === "mobile") await enlarge.tap();
@@ -82,10 +87,50 @@ test("browse, search, choose variants and inspect real images", async ({ page },
     fullPage: true,
   });
 });
+test("guest checkout reserves stock for admin review", async ({ page }) => {
+  const runId = `${Date.now()}-${test.info().project.name}`;
+  const customerName = `Guest Customer ${test.info().project.name}`;
+  const email = `guest-${runId}@example.invalid`;
+  await page.goto("/products/everyday-oxford-shirt");
+  await page.getByRole("button", { name: "Add to cart", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Cart, 1 item" })).toBeVisible();
+  await page.getByRole("link", { name: "Cart, 1 item" }).click();
+  await expect(page.getByRole("heading", { name: "Shopping bag" })).toBeVisible();
+  await page.getByRole("link", { name: "Continue to checkout" }).click();
+  await page.getByLabel("Name", { exact: true }).fill(customerName);
+  await page.getByLabel("Email", { exact: true }).fill(email);
+  await page.getByLabel("Phone", { exact: true }).fill("+8801700000000");
+  await page.getByRole("combobox", { name: "District", exact: true }).selectOption("Dhaka");
+  await page.getByLabel("Postcode", { exact: true }).fill("1207");
+  await page.getByLabel("House / road", { exact: true }).fill("12 Example Road, Dhaka");
+  await page.getByRole("button", { name: "Place order for review" }).click();
+  await expect(page.getByRole("heading", { name: "Thank you." })).toBeVisible();
+
+  await login(page);
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  const orderRow = page.getByRole("row").filter({ hasText: email });
+  await expect(orderRow).toContainText("PENDING REVIEW");
+  await orderRow.getByRole("button", { name: `Edit order for ${customerName}` }).click();
+  const editor = page.getByRole("dialog");
+  await expect(editor.getByRole("heading", { name: /Edit order/ })).toBeVisible();
+  await editor.getByLabel("Customer name").fill("Updated Guest");
+  await editor.getByRole("textbox", { name: "House / road", exact: true }).fill("14 Example Road, Dhaka");
+  await editor.getByLabel("Quantity for item 1").fill("2");
+  await expect(editor.getByText("Recalculated item subtotal", { exact: true })).toBeVisible();
+  await expect(editor.getByText("BDT 3,402.00")).toBeVisible();
+  await editor.getByRole("button", { name: "Save order" }).click();
+  await expect(editor).not.toBeVisible();
+  await expect(orderRow).toContainText("Updated Guest");
+  await expect(orderRow).toContainText("14 Example Road, Dhaka");
+  await expect(orderRow).toContainText("PENDING REVIEW");
+  await orderRow.getByRole("button", { name: "Confirm order" }).click();
+  await expect(orderRow).toContainText("CONFIRMED");
+});
 test("featured carousel respects reduced motion and supports keyboard navigation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  const activeSlide = page.locator('.featured-carousel-slide[aria-hidden="false"]');
+  const carousel = page.getByRole("region", { name: "Featured products" });
+  const activeSlide = carousel.locator('[role="group"][aria-roledescription="slide"][aria-hidden="false"]');
   const initialSlide = await activeSlide.getAttribute("aria-label");
   await expect(page.getByRole("button", { name: /automatic rotation/i })).toHaveCount(0);
   await page.waitForTimeout(5200);
@@ -93,14 +138,15 @@ test("featured carousel respects reduced motion and supports keyboard navigation
   const next = page.getByRole("button", { name: "Next featured product" });
   await next.focus();
   await next.press("Enter");
-  await expect(page.locator('.featured-carousel-slide[aria-hidden="false"]')).not.toHaveAttribute("aria-label", initialSlide || "");
+  await expect(carousel.locator('[role="group"][aria-roledescription="slide"][aria-hidden="false"]')).not.toHaveAttribute("aria-label", initialSlide || "");
 });
 test("story image fold reverses with scroll and stays open for reduced motion", async ({ page }) => {
   await page.goto("/");
-  const image = page.locator(".story-image");
-  const panels = page.locator(".story-fold-panels");
+  const story = page.locator('section[aria-labelledby="story-title"]');
+  const image = story.locator("img");
+  const panels = story.locator(".story-fold-panels");
   await expect(image).toBeVisible();
-  await image.locator("img").evaluate((element) => (element as HTMLImageElement).decode());
+  await image.evaluate((element) => (element as HTMLImageElement).decode());
 
   const supportsScrollTimeline = await page.evaluate(() => CSS.supports("view-timeline-name", "--story-section") && CSS.supports("animation-range", "entry 0% exit 100%"));
   if (supportsScrollTimeline) {
@@ -135,7 +181,7 @@ test("story image fold reverses with scroll and stays open for reduced motion", 
 });
 test("admin creates a category, draft and dynamic variant", async ({ page }, testInfo) => {
   await login(page);
-  const suffix = testInfo.project.name;
+  const suffix = `${testInfo.project.name}-${randomUUID().slice(0, 8)}`;
   await page.getByRole("link", { name: "Categories", exact: true }).click();
   await page.getByRole("button", { name: "Add category" }).click();
   await page.getByLabel("Name", { exact: true }).fill(`Browser ${suffix}`);
@@ -157,14 +203,16 @@ test("admin creates a category, draft and dynamic variant", async ({ page }, tes
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page).toHaveURL(/\/admin\/products\/[0-9a-f-]+$/);
   await page.getByRole("button", { name: "Add variant", exact: true }).click();
-  const variant = page.locator(".variant-editor");
+  const variant = page.getByRole("form", { name: "Variant editor" });
   await variant.getByLabel("Name", { exact: true }).fill("Large");
   await variant.getByLabel("SKU", { exact: true }).fill(`BROWSER-${suffix}-L`);
   await variant.getByRole("button", { name: "Attribute", exact: true }).click();
   await variant.getByLabel("Attribute", { exact: true }).fill("size");
   await variant.getByLabel("Value", { exact: true }).fill("L");
+  await variant.getByLabel("Stock on hand").fill("5");
   await variant.getByRole("button", { name: "Save variant" }).click();
   await expect(page.locator("table")).toContainText("size: L");
+  await expect(page.locator("table")).toContainText("5 / 0");
   await selectRadixOption(page, "Status", "ARCHIVED");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByText("Product saved.", { exact: true })).toBeVisible();

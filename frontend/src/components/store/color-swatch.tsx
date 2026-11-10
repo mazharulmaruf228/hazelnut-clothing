@@ -15,5 +15,5 @@ const colors: Record<string, string> = {
 };
 export function ColorSwatch({ value }: { value: string }) {
   const color = colors[value.toLowerCase()] || (/^#[0-9a-f]{6}$/i.test(value) ? value : "#b8c0bb");
-  return <span aria-hidden="true" className="color-swatch" style={{ backgroundColor: color }} />;
+  return <span aria-hidden="true" className="inline-block h-[17px] w-[17px] shrink-0 rounded-full border border-black/10" style={{ backgroundColor: color }} />;
 }

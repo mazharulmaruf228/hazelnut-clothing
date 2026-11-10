@@ -41,7 +41,7 @@ export function UserEditor({ user, self }: { user: AdminUser; self: boolean }) {
           <DialogTitle>Edit user</DialogTitle>
           <DialogDescription>Changes revoke this account&apos;s existing sessions.</DialogDescription>
           <form
-            className="stack-form"
+            className="grid gap-5"
             onSubmit={handleSubmit(async (values) => {
               setError("");
               try {
@@ -64,7 +64,7 @@ export function UserEditor({ user, self }: { user: AdminUser; self: boolean }) {
               Email
               <Input type="email" {...register("email")} />
             </Label>
-            {(error || Object.keys(errors).length > 0) && <p className="status-message">{error || "Enter a valid name and email."}</p>}
+            {(error || Object.keys(errors).length > 0) && <p className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">{error || "Enter a valid name and email."}</p>}
             <Button disabled={isLoading}>Save user</Button>
           </form>
         </DialogContent>

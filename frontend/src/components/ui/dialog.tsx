@@ -12,11 +12,17 @@ type DialogContentProps = ComponentProps<typeof DialogPrimitive.Content> & { sho
 export function DialogContent({ className, children, showCloseButton = true, ...props }: DialogContentProps) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="ui-dialog-overlay" />
-      <DialogPrimitive.Content className={cn("ui-dialog-content", className)} {...props}>
+      <DialogPrimitive.Overlay className="dialog-overlay-motion fixed inset-0 z-[80] bg-[rgba(20,32,24,0.46)] backdrop-blur-[7px]" />
+      <DialogPrimitive.Content
+        className={cn(
+          "dialog-content-motion fixed left-1/2 top-1/2 z-[90] max-h-[min(90vh,760px)] w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded-md border border-[rgba(255,255,255,0.92)] bg-[rgba(250,252,249,0.97)] p-7 shadow-[0_24px_70px_rgba(15,32,20,0.25)] backdrop-blur-[20px] backdrop-saturate-[130%]",
+          className,
+        )}
+        {...props}
+      >
         {children}
         {showCloseButton && (
-          <DialogPrimitive.Close className="ui-dialog-close" aria-label="Close dialog">
+          <DialogPrimitive.Close className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full border border-line bg-[rgba(255,255,255,0.78)] p-0 text-foreground" aria-label="Close dialog">
             <X size={17} />
           </DialogPrimitive.Close>
         )}
@@ -26,13 +32,13 @@ export function DialogContent({ className, children, showCloseButton = true, ...
 }
 
 export function DialogTitle({ className, ...props }: ComponentProps<typeof DialogPrimitive.Title>) {
-  return <DialogPrimitive.Title className={cn("ui-dialog-title", className)} {...props} />;
+  return <DialogPrimitive.Title className={cn("pr-7 text-xl font-semibold leading-[1.25] text-foreground", className)} {...props} />;
 }
 
 export function DialogDescription({ className, ...props }: ComponentProps<typeof DialogPrimitive.Description>) {
-  return <DialogPrimitive.Description className={cn("ui-dialog-description", className)} {...props} />;
+  return <DialogPrimitive.Description className={cn("mt-2.5 mb-5 text-xs leading-[1.5] text-muted", className)} {...props} />;
 }
 
 export function DialogFooter({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn("ui-dialog-footer", className)} {...props} />;
+  return <div className={cn("mt-5 flex justify-end gap-[9px]", className)} {...props} />;
 }

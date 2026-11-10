@@ -8,9 +8,10 @@ process.env.NODE_ENV = "test";
 const migrated = spawnSync(process.platform === "win32" ? "npx.cmd" : "npx", ["prisma", "migrate", "deploy"], { stdio: "inherit", env: process.env, shell: process.platform === "win32" });
 if (migrated.status !== 0) process.exit(migrated.status || 1);
 const { db } = await import("../src/config/database.ts");
-await db.$executeRawUnsafe('TRUNCATE "AssetDeletion", "ProductImage", "ProductVariant", "Product", "Category", "AdminSession", "OAuthIdentity", "AdminUser" CASCADE');
+await db.$executeRawUnsafe('TRUNCATE "OrderItem", "Order", "AssetDeletion", "ProductImage", "ProductVariant", "Product", "Category", "AdminSession", "OAuthIdentity", "AdminUser" CASCADE');
 await import("../prisma/seed.ts");
 try {
+  await db.productVariant.updateMany({ data: { stockOnHand: 10 } });
   const passwordHash = await argon2.hash("Catalogue-e2e-password-123!");
   for (const role of ["ADMIN", "EDITOR"] as const)
     await db.adminUser.create({

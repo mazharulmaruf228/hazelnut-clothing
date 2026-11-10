@@ -23,6 +23,7 @@ export async function updateVariant(id: string, input: z.infer<typeof variantPat
     await write(async (client) => {
       const existing = await variantModel.findById(id, client);
       if ((input.isDefault ?? existing.isDefault) && input.isActive === false) throw new HttpError(409, "The default variant must be active");
+      if (input.stockOnHand !== undefined && input.stockOnHand < existing.stockReserved) throw new HttpError(409, "Stock on hand cannot be lower than reserved stock");
       if (input.isDefault) await variantModel.clearDefault(existing.productId, client);
       await variantModel.update(id, input, client);
       return assertProduct(client, existing.productId);
@@ -35,6 +36,7 @@ export async function deleteVariant(id: string) {
     await write(async (client) => {
       const existing = await variantModel.findById(id, client);
       if (existing.isDefault) throw new HttpError(409, "Choose another default variant before deleting this one");
+      if (existing.stockOnHand > 0 || existing.stockReserved > 0) throw new HttpError(409, "Remove variant stock before deleting it");
       const product = await productModel.findById(existing.productId, client);
       await assetDeletionModel.enqueue(
         product.images.filter((image) => image.variantId === id).map((image) => image.publicId),

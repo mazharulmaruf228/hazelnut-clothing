@@ -2,9 +2,9 @@
 import { Button } from "@/components/ui/button";
 export default function ErrorPage({ reset }: { reset: () => void }) {
   return (
-    <main className="empty-state">
+    <main className="grid min-h-[250px] place-items-center px-5 py-20 text-center">
       <h1>Something went wrong.</h1>
-      <p>Please try again in a moment.</p>
+      <p className="my-3 mb-[22px] text-muted">Please try again in a moment.</p>
       <Button onClick={reset}>Try again</Button>
     </main>
   );

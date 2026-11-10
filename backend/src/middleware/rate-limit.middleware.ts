@@ -18,3 +18,15 @@ export const apiLimit = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
 });
+export const orderLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
+export const orderLookupLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 5,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { bangladeshDistricts } from "../utils/delivery.ts";
 
 const money = z.string().regex(/^\d{1,10}(\.\d{1,2})?$/, "Use a nonnegative amount with at most two decimal places");
 const slug = z
@@ -21,6 +22,7 @@ export const variantInput = z
     attributes: attributes.default({}),
     isDefault: z.boolean().default(false),
     isActive: z.boolean().default(true),
+    stockOnHand: z.number().int().min(0).max(1_000_000).default(0),
   })
   .strict();
 export const productInput = z
@@ -72,8 +74,52 @@ export const variantPatch = variantInput
     attributes: variantInput.shape.attributes.removeDefault(),
     isDefault: variantInput.shape.isDefault.removeDefault(),
     isActive: variantInput.shape.isActive.removeDefault(),
+    stockOnHand: variantInput.shape.stockOnHand.removeDefault(),
   })
   .partial();
+export const createOrderInput = z
+  .object({
+    customerName: z.string().trim().min(1).max(120),
+    email: z.email().max(254),
+    phone: z.string().trim().min(7).max(30),
+    deliveryAddress: z.string().trim().min(5).max(500),
+    district: z.enum(bangladeshDistricts),
+    postcode: z.string().trim().regex(/^\d{4}$/, "Enter a four-digit Bangladesh postcode"),
+    customerNote: z.string().trim().max(1000).default(""),
+    items: z
+      .array(z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(20) }).strict())
+      .min(1)
+      .max(20)
+      .refine((items) => new Set(items.map((item) => item.variantId)).size === items.length, "Each variant can appear only once"),
+  })
+  .strict();
+export const orderStatusInput = z.object({ status: z.enum(["CONFIRMED", "REJECTED"]) }).strict();
+export const orderEditInput = z
+  .object({
+    updatedAt: z.iso.datetime(),
+    customerName: z.string().trim().min(1).max(120),
+    email: z.email().max(254),
+    phone: z.string().trim().min(7).max(30),
+    deliveryAddress: z.string().trim().min(5).max(500),
+    deliveryArea: z.string().trim().max(120),
+    district: z.enum(bangladeshDistricts).nullable(),
+    postcode: z.string().trim().regex(/^\d{4}$/).nullable(),
+    customerNote: z.string().trim().max(1000),
+    items: z
+      .array(z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(20) }).strict())
+      .min(1)
+      .max(20)
+      .refine((items) => new Set(items.map((item) => item.variantId)).size === items.length, "Each variant can appear only once"),
+  })
+  .strict();
+export const orderLookupInput = z
+  .object({
+    orderNumber: z.uuid(),
+    email: z.email().max(254).optional(),
+    phone: z.string().trim().min(7).max(30).optional(),
+  })
+  .strict()
+  .refine((input) => Boolean(input.email) !== Boolean(input.phone), "Provide either email or phone");
 export const categoryPatch = categoryInput
   .extend({
     description: categoryInput.shape.description.removeDefault(),

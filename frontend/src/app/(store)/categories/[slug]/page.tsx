@@ -18,10 +18,10 @@ export default async function CategoryPage({ params, searchParams }: { params: P
   if (!category) notFound();
   return (
     <>
-      <div className="page-intro">
-        <span className="eyebrow">The collection</span>
-        <h1>{category.name}</h1>
-        {category.description && <p>{category.description}</p>}
+      <div className="mx-auto max-w-[1500px] px-[5%] pt-[35px] max-[700px]:pt-[25px]">
+        <span className="text-[10px] font-semibold uppercase tracking-[1.6px]">The collection</span>
+        <h1 className="mt-2">{category.name}</h1>
+        {category.description && <p className="text-muted">{category.description}</p>}
       </div>
       <Catalogue params={{ ...(await searchParams), category: slug }} />
     </>

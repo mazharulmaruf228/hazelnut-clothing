@@ -11,11 +11,17 @@ import { assetDeletionModel } from "../models/asset-deletion.model.ts";
 export function productDto(product: FullProduct, publicOnly = false) {
   const variants = product.variants
     .filter((variant) => !publicOnly || variant.isActive)
-    .map((variant) => ({
-      ...variant,
-      price: variant.price?.toFixed(2) ?? null,
-      effectivePrice: effectivePrice(product.price.toString(), variant.price?.toString() ?? null, product.discountPercentage.toString()),
-    }));
+    .map((variant) => {
+      const { stockOnHand, stockReserved, ...data } = variant;
+      return {
+        ...data,
+        inStock: stockOnHand > stockReserved,
+        availableQuantity: stockOnHand - stockReserved,
+        ...(!publicOnly ? { stockOnHand, stockReserved } : {}),
+        price: variant.price?.toFixed(2) ?? null,
+        effectivePrice: effectivePrice(product.price.toString(), variant.price?.toString() ?? null, product.discountPercentage.toString()),
+      };
+    });
   const activePrices = variants
     .filter((variant) => variant.isActive)
     .map((variant) => variant.effectivePrice)
@@ -117,6 +123,7 @@ export async function updateProduct(id: string, input: z.infer<typeof productPat
 export async function deleteProduct(id: string) {
   await write(async (client) => {
     const product = await productModel.findById(id, client);
+    if (product.variants.some((variant) => variant.stockOnHand > 0 || variant.stockReserved > 0)) throw new HttpError(409, "Remove variant stock before deleting this product");
     await assetDeletionModel.enqueue(
       product.images.map((image) => image.publicId),
       client,
