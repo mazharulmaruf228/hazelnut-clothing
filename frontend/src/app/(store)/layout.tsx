@@ -1,4 +1,5 @@
-import { Footer, Header } from "@/components/store/header";
+import { Suspense } from "react";
+import { Footer, Header, HeaderFallback } from "@/components/store/header";
 
 export default function StoreLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -6,7 +7,9 @@ export default function StoreLayout({ children }: { children: React.ReactNode })
       <a href="#main" className="fixed left-5 top-[-100px] z-[100] bg-white p-3 focus:top-[10px]">
         Skip to content
       </a>
-      <Header />
+      <Suspense fallback={<HeaderFallback />}>
+        <Header />
+      </Suspense>
       <main id="main">{children}</main>
       <Footer />
     </>
