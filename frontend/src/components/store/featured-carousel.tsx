@@ -46,16 +46,16 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
 
   if (products.length === 0) {
     return (
-      <section className="featured-carousel-empty catalogue-section" id="collection">
+      <section className="mx-auto min-h-[280px] max-w-[1500px] px-[5%] pt-[38px] pb-[65px] max-[700px]:pt-[27px] max-[700px]:pb-10" id="collection">
         <h2>The collection</h2>
-        <p>No featured pieces at the moment.</p>
+        <p className="mt-3 text-muted">No featured pieces at the moment.</p>
       </section>
     );
   }
 
   return (
     <section
-      className="featured-carousel catalogue-section"
+      className="mx-auto max-w-[1540px] px-[5%] pt-[38px] pb-[65px] max-[700px]:pt-[27px] max-[700px]:pb-10"
       id="collection"
       role="region"
       aria-roledescription="carousel"
@@ -68,40 +68,48 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false);
       }}
     >
-      <div className="featured-carousel-heading">
+      <div className="mb-[22px] flex items-end justify-between gap-5 border-b border-line pb-5 max-[700px]:mb-[15px] max-[700px]:pb-[15px]">
         <div>
-          <span className="eyebrow">The featured edit</span>
-          <h2>The collection</h2>
+          <span className="text-[10px] font-semibold uppercase tracking-[1.6px]">The featured edit</span>
+          <h2 className="mt-[6px]">The collection</h2>
         </div>
-        <span className="muted">{products.length} pieces</span>
+        <span className="text-muted">{products.length} pieces</span>
       </div>
-      <div className="featured-carousel-viewport" ref={viewportRef} aria-live={shouldRotate ? "off" : "polite"}>
-        <div className="featured-carousel-track">
+      <div className="overflow-hidden rounded-[7px] border border-white/90 bg-white/60 shadow-[0_18px_48px_rgba(32,54,39,0.1)]" ref={viewportRef} aria-live={shouldRotate ? "off" : "polite"}>
+        <div className="flex touch-pan-y">
           {products.map((product, index) => {
             const image = product.images.find((item) => !item.variantId) ?? product.images[0];
             const lowestVariant = product.variants.find((variant) => variant.isActive && variant.effectivePrice === product.fromPrice);
             const originalPrice = lowestVariant?.price ?? product.price;
             const isActive = index === selectedIndex;
             return (
-              <article className="featured-carousel-slide" key={product.id} role="group" aria-roledescription="slide" aria-label={`${index + 1} of ${products.length}: ${product.name}`} aria-hidden={!isActive} inert={!isActive}>
-                <Link className="featured-carousel-image" href={`/products/${product.slug}`} tabIndex={isActive ? 0 : -1}>
-                  {image ? <Image src={image.imageUrl} alt={image.alt || product.name} fill sizes="(max-width: 700px) 90vw, 48vw" priority={index === 0} /> : <span className="image-missing">{product.name}</span>}
-                  {Number(product.discountPercentage) > 0 && <span className="product-badge">-{product.discountPercentage}%</span>}
-                  <span className="featured-carousel-image-link" aria-hidden="true">
+              <article
+                className="grid min-w-0 flex-[0_0_100%] grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] items-stretch bg-featured-slide max-[700px]:grid-cols-1"
+                key={product.id}
+                role="group"
+                aria-roledescription="slide"
+                aria-label={`${index + 1} of ${products.length}: ${product.name}`}
+                aria-hidden={!isActive}
+                inert={!isActive}
+              >
+                <Link className="featured-carousel-image-motion relative block min-h-[490px] min-w-0 overflow-hidden bg-[#e4e9e3] max-[700px]:min-h-0 max-[700px]:aspect-[4/3]" href={`/products/${product.slug}`} tabIndex={isActive ? 0 : -1}>
+                  {image ? <Image src={image.imageUrl} alt={image.alt || product.name} fill sizes="(max-width: 700px) 90vw, 48vw" priority={index === 0} /> : <span className="grid h-full place-items-center p-5 text-muted">{product.name}</span>}
+                  {Number(product.discountPercentage) > 0 && <span className="absolute left-3 top-3 bg-[#fffdf5e8] px-2 py-1 text-[10px] text-[#a34132] backdrop-blur-[6px] max-[700px]:left-2 max-[700px]:top-2 max-[700px]:text-[9px]">-{product.discountPercentage}%</span>}
+                  <span className="absolute right-5 bottom-5 grid h-[42px] w-[42px] place-items-center rounded-full border border-white/80 bg-white/75 text-[#20372a] backdrop-blur-[14px] max-[700px]:right-3 max-[700px]:bottom-3 max-[700px]:h-9 max-[700px]:w-9" aria-hidden="true">
                     <ArrowUpRight size={19} />
                   </span>
                 </Link>
-                <div className="featured-carousel-copy">
-                  <span className="eyebrow">{product.category.name}</span>
-                  <h3>{product.name}</h3>
-                  <p className="featured-carousel-description">{product.description}</p>
-                  <p className="featured-carousel-price">
-                    {product.hasPriceRange && <span className="muted">From </span>}
+                <div className="flex min-w-0 flex-col items-start justify-center px-[clamp(24px,4vw,68px)] py-12 text-[#20372a] max-[700px]:px-5 max-[700px]:pt-6 max-[700px]:pb-[27px]">
+                  <span className="text-[10px] font-semibold uppercase tracking-[1.6px] text-green">{product.category.name}</span>
+                  <h3 className="mt-[15px] max-w-[12ch] break-words font-editorial text-[40px] font-medium leading-[1.03] max-[700px]:mt-[9px] max-[700px]:max-w-none max-[700px]:text-[30px]">{product.name}</h3>
+                  <p className="mt-[17px] line-clamp-5 max-w-[44ch] overflow-hidden text-[13px] leading-[1.7] text-[#536157] max-[700px]:mt-[10px] max-[700px]:line-clamp-4">{product.description}</p>
+                  <p className="mt-[22px] flex flex-wrap items-baseline gap-[9px] text-lg font-[650] max-[700px]:mt-[14px] max-[700px]:text-base">
+                    {product.hasPriceRange && <span className="text-muted">From </span>}
                     {money(product.fromPrice)}
-                    {Number(product.discountPercentage) > 0 && !product.hasPriceRange && <del>{money(originalPrice)}</del>}
+                    {Number(product.discountPercentage) > 0 && !product.hasPriceRange && <del className="text-xs font-normal text-muted">{money(originalPrice)}</del>}
                   </p>
-                  <span className="muted variant-note">{product.variants.length} options</span>
-                  <Link className="featured-carousel-details" href={`/products/${product.slug}`}>
+                  <span className="mt-[5px] text-[10px] text-muted">{product.variants.length} options</span>
+                  <Link className="featured-carousel-details-motion mt-[25px] inline-flex items-center gap-[18px] border-b border-[#20372a]/65 py-[11px] text-xs font-semibold text-[#20372a] hover:gap-6 hover:text-green max-[700px]:mt-4" href={`/products/${product.slug}`}>
                     View details <ArrowUpRight size={16} />
                   </Link>
                 </div>
@@ -111,15 +119,15 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
         </div>
       </div>
       {products.length > 1 && (
-        <div className="featured-carousel-controls" aria-label="Featured product controls">
-          <div className="featured-carousel-pagination" aria-label="Choose a featured product">
+        <div className="mt-4 flex items-center justify-between gap-[18px] max-[700px]:mt-3 max-[700px]:gap-2.5" aria-label="Featured product controls">
+          <div className="flex items-center gap-2 max-[700px]:gap-1" aria-label="Choose a featured product">
             {products.map((product, index) => (
               <Button
                 key={product.id}
                 type="button"
                 variant="ghost"
                 size="icon"
-                className={`featured-carousel-dot ${index === selectedIndex ? "active" : ""}`}
+                className="!h-8 !min-h-8 !w-[26px] !rounded-none !px-0 !py-0"
                 title={`Go to ${product.name}`}
                 aria-label={`Go to slide ${index + 1}: ${product.name}`}
                 aria-current={index === selectedIndex ? "true" : undefined}
@@ -127,16 +135,16 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
                   emblaApi?.scrollTo(index);
                 }}
               >
-                <span />
+                <span className={`featured-carousel-dot-motion h-[7px] rounded-full ${index === selectedIndex ? "w-5 rounded-md bg-green" : "w-[7px] bg-[#a6b0a7]"}`} />
               </Button>
             ))}
           </div>
-          <div className="featured-carousel-actions">
+          <div className="flex items-center gap-2 max-[700px]:gap-1">
             <Button
               type="button"
               variant="outline"
               size="icon"
-              className="featured-carousel-nav"
+              className="!h-10 !min-h-10 !w-10 !rounded-full !bg-[rgba(255,255,255,0.72)] hover:!bg-white hover:!brightness-100 max-[700px]:!h-9 max-[700px]:!min-h-9 max-[700px]:!w-9"
               title="Previous featured product"
               aria-label="Previous featured product"
               onClick={() => {
@@ -149,7 +157,7 @@ export function FeaturedCarousel({ products }: { products: Product[] }) {
               type="button"
               variant="outline"
               size="icon"
-              className="featured-carousel-nav"
+              className="!h-10 !min-h-10 !w-10 !rounded-full !bg-[rgba(255,255,255,0.72)] hover:!bg-white hover:!brightness-100 max-[700px]:!h-9 max-[700px]:!min-h-9 max-[700px]:!w-9"
               title="Next featured product"
               aria-label="Next featured product"
               onClick={() => {

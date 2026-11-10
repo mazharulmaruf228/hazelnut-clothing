@@ -15,4 +15,19 @@ describe("API perimeter without a database", () => {
     expect(response.body.token).toHaveLength(64);
     expect(response.headers["set-cookie"]).toBeDefined();
   });
+  it("returns all static district delivery options without a database", async () => {
+    const response = await request(app).get("/api/orders/delivery-options");
+    expect(response.status).toBe(200);
+    expect(response.body.items).toHaveLength(64);
+    expect(response.body.items.find((item: { district: string }) => item.district === "Dhaka")).toMatchObject({ deliveryCharge: "80.00" });
+    expect(response.body.items.find((item: { district: string }) => item.district === "Khulna")).toMatchObject({ deliveryCharge: "100.00" });
+  });
+  it("rejects malformed or ambiguous guest order lookup input", async () => {
+    const response = await request(app).post("/api/orders/lookup").send({
+      orderNumber: "00000000-0000-4000-8000-000000000001",
+      email: "guest@example.com",
+      phone: "+8801700000000",
+    });
+    expect(response.status).toBe(400);
+  });
 });

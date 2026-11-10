@@ -31,15 +31,15 @@ export function Confirm({ trigger, title, description, onConfirm }: { trigger: R
       }}
     >
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="confirm-dialog">
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>{description}</DialogDescription>
+      <DialogContent>
+        <DialogTitle className="font-sans text-xl font-[550]">{title}</DialogTitle>
+        <DialogDescription className="mt-3 mb-[22px] text-[13px] text-muted">{description}</DialogDescription>
         {error && (
-          <p className="status-message" role="alert">
+          <p className="mt-[15px] rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]" role="alert">
             {error}
           </p>
         )}
-        <div className="form-actions">
+        <div className="mt-[22px] flex flex-wrap items-center gap-3 text-[11px]">
           <DialogClose asChild>
             <Button variant="outline" disabled={busy}>
               Cancel

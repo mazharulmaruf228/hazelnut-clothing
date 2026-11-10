@@ -22,13 +22,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }, [unauthorized, router]);
   if (isLoading || unauthorized)
     return (
-      <div className="loading-state" role="status">
+      <div className="grid min-h-screen place-items-center p-20 text-center text-muted" role="status">
         Checking your session...
       </div>
     );
   if (!data)
     return (
-      <div className="empty-state">
+      <div className="grid min-h-[250px] place-items-center px-5 py-20 text-center">
         <h1>Unable to connect.</h1>
         <p>The admin service is unavailable.</p>
         <Button onClick={refetch}>Retry</Button>
@@ -43,32 +43,36 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     { href: "/admin/account", label: "Account", icon: Settings },
   ];
   return (
-    <div className="admin-layout">
-      <aside className="admin-sidebar glass">
-        <Link href="/" className="wordmark">
+    <div className="grid min-h-screen grid-cols-[220px_minmax(0,1fr)] bg-[linear-gradient(125deg,#f3f5ef,#f4f6f7_65%,#eef3ef)] max-[1050px]:grid-cols-[180px_minmax(0,1fr)] max-[700px]:block">
+      <aside className="sticky top-0 flex h-screen flex-col border-r border-line bg-glass-surface px-[25px] py-[33px] shadow-[0_12px_36px_rgba(31,53,39,0.08)] backdrop-blur-[24px] backdrop-saturate-[145%] max-[1050px]:px-[18px] max-[1050px]:py-7 max-[700px]:z-[30] max-[700px]:h-auto max-[700px]:border-r-0 max-[700px]:border-b max-[700px]:border-line max-[700px]:bg-[#f9fbf5eb] max-[700px]:px-[5%] max-[700px]:pt-[15px] max-[700px]:pb-0">
+        <Link href="/" className="inline-flex items-center gap-[5px] font-editorial text-[32px] font-bold leading-none max-[700px]:text-[26px]">
           {storeName}
-          <span className="brand-mark" />
+          <span className="mb-1 h-[5px] w-[5px] self-end bg-coral" />
         </Link>
-        <span className="eyebrow admin-label">Catalogue studio</span>
-        <nav aria-label="Admin navigation">
+        <span className="mb-[35px] mt-[18px] text-[9px] text-muted max-[700px]:hidden">CATALOGUE STUDIO</span>
+        <nav className="grid gap-[7px] max-[700px]:mt-[14px] max-[700px]:flex max-[700px]:gap-1 max-[700px]:overflow-auto" aria-label="Admin navigation">
           {items.map((item) => (
-            <Link key={item.href} href={item.href} className={(item.href === "/admin" ? pathname === item.href : pathname.startsWith(item.href)) ? "active" : ""}>
-              <item.icon size={17} />
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`admin-nav-motion flex items-center gap-3 rounded-[4px] p-3 text-xs max-[700px]:shrink-0 max-[700px]:gap-[7px] max-[700px]:px-3 max-[700px]:py-2.5 max-[700px]:text-[11px] max-[700px]:whitespace-nowrap max-[700px]:[&_svg]:w-[14px] ${(item.href === "/admin" ? pathname === item.href : pathname.startsWith(item.href)) ? "bg-[#e2ebe2] font-semibold text-[#234d36]" : "text-muted hover:bg-[rgba(255,255,255,0.55)] hover:text-green"}`}
+            >
+              <item.icon className="shrink-0" size={17} />
               {item.label}
             </Link>
           ))}
         </nav>
-        <Link href="/" className="store-link">
+        <Link href="/" className="mt-auto flex justify-between pt-[30px] text-xs max-[700px]:hidden">
           View storefront <ArrowUpRight size={16} />
         </Link>
       </aside>
-      <div className="admin-body">
-        <header className="admin-header glass">
-          <span className="muted">Workspace / {items.find((item) => item.href !== "/admin" && pathname.startsWith(item.href))?.label || "Overview"}</span>
-          <div>
+      <div className="min-w-0">
+        <header className="sticky top-0 z-[25] flex h-[78px] items-center justify-between gap-[15px] border-b border-line bg-glass-surface px-[35px] py-[15px] text-xs shadow-[0_12px_36px_rgba(31,53,39,0.08)] backdrop-blur-[24px] backdrop-saturate-[145%] max-[1050px]:px-[25px] max-[700px]:static max-[700px]:h-[65px] max-[700px]:px-[5%] max-[700px]:py-3 max-[700px]:text-[10px]">
+          <span className="text-muted">Workspace / {items.find((item) => item.href !== "/admin" && pathname.startsWith(item.href))?.label || "Overview"}</span>
+          <div className="flex items-center gap-4 max-[700px]:gap-[5px]">
             <span>
               {data.user.name}
-              <small>{data.user.role}</small>
+              <small className="block text-[9px] text-muted">{data.user.role}</small>
             </span>
             <Button
               variant="ghost"
@@ -89,7 +93,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
         </header>
-        <main className="admin-content">{children}</main>
+        <main className="mx-auto w-full max-w-[1450px] p-[35px] max-[1050px]:p-[25px] max-[700px]:px-[5%] max-[700px]:py-[25px]">{children}</main>
       </div>
       <AlertDialog open={logoutError} onOpenChange={setLogoutError}>
         <AlertDialogContent>

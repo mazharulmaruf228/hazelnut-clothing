@@ -24,3 +24,9 @@ export const orderLimit = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
 });
+export const orderLookupLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 5,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});

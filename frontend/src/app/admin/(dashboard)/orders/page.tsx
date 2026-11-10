@@ -8,14 +8,18 @@ import { Confirm } from "@/components/ui/confirm";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import type { Order } from "@/schemas/api";
 import { errorMessage, money } from "@/lib/utils";
+import { useDeliveryOptions } from "@/lib/delivery";
 
 type OrderLineInput = { variantId: string; quantity: string };
-type OrderContact = Pick<Order, "customerName" | "email" | "phone" | "deliveryAddress" | "deliveryArea" | "customerNote">;
+type OrderContact = Pick<Order, "customerName" | "email" | "phone" | "deliveryAddress" | "deliveryArea" | "district" | "postcode" | "customerNote">;
 
 function OrderEditor({ order, close }: { order: Order; close: () => void }) {
   const { data: productData, isLoading: productsLoading } = useProductsQuery("status=PUBLISHED&page=1&pageSize=100");
+  const { items: deliveryOptions, isLoading: deliveryOptionsLoading, error: deliveryOptionsError } = useDeliveryOptions();
   const [change, { isLoading }] = useChangeMutation();
   const [error, setError] = useState("");
   const [contact, setContact] = useState<OrderContact>({
@@ -24,6 +28,8 @@ function OrderEditor({ order, close }: { order: Order; close: () => void }) {
     phone: order.phone,
     deliveryAddress: order.deliveryAddress,
     deliveryArea: order.deliveryArea,
+    district: order.district,
+    postcode: order.postcode,
     customerNote: order.customerNote,
   });
   const [items, setItems] = useState<OrderLineInput[]>(order.items.map((item) => ({ variantId: item.variantId ?? "", quantity: String(item.quantity) })));
@@ -31,8 +37,11 @@ function OrderEditor({ order, close }: { order: Order; close: () => void }) {
   const variantsById = new Map(variants.map((option) => [option.variant.id, option]));
   const unchanged = items.length === order.items.length && items.every((line) => order.items.some((item) => item.variantId === line.variantId && item.quantity === Number(line.quantity)));
   const subtotal = unchanged ? order.subtotal : items.reduce((total, line) => total + Number(variantsById.get(line.variantId)?.variant.effectivePrice ?? 0) * (Number(line.quantity) || 0), 0).toFixed(2);
+  const districtChanged = contact.district !== order.district;
+  const deliveryCharge = districtChanged ? (deliveryOptions.find((option) => option.district === contact.district)?.deliveryCharge ?? (contact.district ? order.deliveryCharge : "0.00")) : order.deliveryCharge;
+  const total = (Number(subtotal) + Number(deliveryCharge)).toFixed(2);
 
-  function setContactField(field: keyof OrderContact, value: string) {
+  function setContactField<K extends keyof OrderContact>(field: K, value: OrderContact[K]) {
     setContact((current) => ({ ...current, [field]: value }));
   }
   function setLine(index: number, patch: Partial<OrderLineInput>) {
@@ -68,11 +77,11 @@ function OrderEditor({ order, close }: { order: Order; close: () => void }) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && close()}>
-      <DialogContent className="order-edit-dialog">
+      <DialogContent className="!max-h-[min(88vh,900px)] !w-[min(860px,calc(100vw-32px))] overflow-y-auto">
         <DialogTitle>Edit order {order.id.slice(0, 8).toUpperCase()}</DialogTitle>
         <DialogDescription>Changes stay pending for customer agreement. Item changes use current catalogue prices and update reserved stock.</DialogDescription>
-        <form className="order-edit-form" onSubmit={submit}>
-          <div className="order-edit-contact">
+        <form className="mt-5 grid gap-5" onSubmit={submit}>
+          <div className="grid grid-cols-2 gap-4 max-[600px]:grid-cols-1">
             <Label>
               Customer name
               <Input value={contact.customerName} onChange={(event) => setContactField("customerName", event.target.value)} required maxLength={120} />
@@ -86,33 +95,53 @@ function OrderEditor({ order, close }: { order: Order; close: () => void }) {
               <Input type="tel" value={contact.phone} onChange={(event) => setContactField("phone", event.target.value)} required minLength={7} maxLength={30} />
             </Label>
             <Label>
-              Delivery area
-              <Input value={contact.deliveryArea} onChange={(event) => setContactField("deliveryArea", event.target.value)} required maxLength={120} />
+              District
+              <select className="min-h-[42px] w-full rounded-[4px] border border-line bg-[rgba(255,255,255,0.84)] px-3 py-2.5 text-foreground" aria-label="Delivery district" value={contact.district ?? ""} onChange={(event) => setContactField("district", event.target.value || null)}>
+                <option value="">Legacy address / no district</option>
+                {deliveryOptions.map((option) => (
+                  <option key={option.district} value={option.district}>
+                    {option.district}
+                  </option>
+                ))}
+              </select>
             </Label>
-            <Label className="order-edit-wide">
-              Delivery address
-              <textarea className="ui-textarea" value={contact.deliveryAddress} onChange={(event) => setContactField("deliveryAddress", event.target.value)} required minLength={5} maxLength={500} />
+            <Label>
+              Postcode
+              <Input inputMode="numeric" pattern="[0-9]{4}" value={contact.postcode ?? ""} onChange={(event) => setContactField("postcode", event.target.value || null)} maxLength={4} />
             </Label>
-            <Label className="order-edit-wide">
+            <Label className="col-span-full max-[600px]:col-auto">
+              Legacy delivery area
+              <Input value={contact.deliveryArea} onChange={(event) => setContactField("deliveryArea", event.target.value)} maxLength={120} />
+            </Label>
+            <Label className="col-span-full max-[600px]:col-auto">
+              House / road
+              <Textarea value={contact.deliveryAddress} onChange={(event) => setContactField("deliveryAddress", event.target.value)} required minLength={5} maxLength={500} />
+            </Label>
+            <Label className="col-span-full max-[600px]:col-auto">
               Order note
-              <textarea className="ui-textarea" value={contact.customerNote} onChange={(event) => setContactField("customerNote", event.target.value)} maxLength={1000} />
+              <Textarea value={contact.customerNote} onChange={(event) => setContactField("customerNote", event.target.value)} maxLength={1000} />
             </Label>
           </div>
-          <div className="order-edit-heading">
-            <h3>Items</h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-[15px]">Items</h3>
             <Button type="button" variant="outline" size="sm" onClick={addLine}>
               <Plus size={14} /> Add item
             </Button>
           </div>
-          <div className="order-edit-lines">
+          <div className="grid gap-3">
             {items.map((item, index) => {
               const original = order.items.find((line) => line.variantId === item.variantId);
               const existingVariantUnavailable = item.variantId && !variantsById.has(item.variantId);
               return (
-                <div className="order-edit-line" key={`${order.id}-${index}`}>
-                  <Label className="order-edit-variant">
+                <div className="grid grid-cols-[minmax(0,1fr)_110px_36px] items-end gap-3 border-b border-line pb-3 max-[600px]:grid-cols-[minmax(0,1fr)_76px_34px] max-[600px]:gap-[7px]" key={`${order.id}-${index}`}>
+                  <Label>
                     Variant
-                    <select className="ui-input" aria-label={`Variant for item ${index + 1}`} value={item.variantId} onChange={(event) => setLine(index, { variantId: event.target.value })}>
+                    <select
+                      className="min-h-[42px] w-full min-w-0 rounded-[4px] border border-line bg-[rgba(255,255,255,0.84)] px-3 py-2.5 text-foreground max-[600px]:p-2 max-[600px]:text-[11px]"
+                      aria-label={`Variant for item ${index + 1}`}
+                      value={item.variantId}
+                      onChange={(event) => setLine(index, { variantId: event.target.value })}
+                    >
                       <option value="">Choose a variant</option>
                       {existingVariantUnavailable && original && (
                         <option value={item.variantId}>
@@ -130,11 +159,11 @@ function OrderEditor({ order, close }: { order: Order; close: () => void }) {
                       })}
                     </select>
                   </Label>
-                  <Label className="order-edit-quantity">
+                  <Label>
                     Quantity
                     <Input aria-label={`Quantity for item ${index + 1}`} type="number" min="1" max={item.variantId ? maximumFor(item.variantId) : 20} step="1" value={item.quantity} onChange={(event) => setLine(index, { quantity: event.target.value })} required />
                   </Label>
-                  <Button type="button" variant="ghost" size="icon" title="Remove item" aria-label={`Remove item ${index + 1}`} onClick={() => setItems((current) => current.filter((_, lineIndex) => lineIndex !== index))}>
+                  <Button className="!h-[42px] !w-9 !min-h-[42px]" type="button" variant="ghost" size="icon" title="Remove item" aria-label={`Remove item ${index + 1}`} onClick={() => setItems((current) => current.filter((_, lineIndex) => lineIndex !== index))}>
                     <Trash2 size={16} />
                   </Button>
                 </div>
@@ -142,21 +171,34 @@ function OrderEditor({ order, close }: { order: Order; close: () => void }) {
             })}
           </div>
           {productsLoading && (
-            <p role="status" className="muted">
+            <p role="status" className="text-muted">
               Loading available variants...
             </p>
           )}
-          <div className="order-edit-total">
-            <span>{unchanged ? "Current subtotal" : "Recalculated subtotal"}</span>
+          <div className="flex items-center justify-between gap-3 border-t border-foreground pt-[15px] text-[13px]">
+            <span>{unchanged ? "Item subtotal" : "Recalculated item subtotal"}</span>
             <strong>{money(subtotal)}</strong>
           </div>
+          <div className="flex items-center justify-between gap-3 text-[13px]">
+            <span>Delivery charge</span>
+            <strong>{money(deliveryCharge)}</strong>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-foreground pt-[15px] text-[13px]">
+            <span>Grand total</span>
+            <strong>{money(total)}</strong>
+          </div>
+          {deliveryOptionsError && (
+            <p role="alert" className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">
+              {deliveryOptionsError}
+            </p>
+          )}
           {error && (
-            <p role="alert" className="status-message">
+            <p role="alert" className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">
               {error}
             </p>
           )}
-          <div className="form-actions">
-            <Button disabled={isLoading || !items.length || (productsLoading && !unchanged)}>Save order</Button>
+          <div className="mt-[22px] flex flex-wrap items-center gap-3 text-[11px]">
+            <Button disabled={isLoading || !items.length || (productsLoading && !unchanged) || (districtChanged && (deliveryOptionsLoading || Boolean(deliveryOptionsError)))}>Save order</Button>
             <Button type="button" variant="ghost" onClick={close}>
               Cancel
             </Button>
@@ -182,71 +224,81 @@ export default function OrdersPage() {
   }
   return (
     <>
-      <div className="admin-title">
+      <div className="mb-8 flex items-center justify-between gap-5 max-[700px]:mb-6 max-[700px]:items-start max-[700px]:gap-3">
         <div>
-          <span className="eyebrow">Commerce</span>
-          <h1>Orders</h1>
+          <span className="text-[9px] uppercase tracking-[1.6px] text-muted">Commerce</span>
+          <h1 className="mt-2 overflow-wrap-anywhere font-sans text-[28px] font-medium leading-[1.2] max-[700px]:text-[25px]">Orders</h1>
         </div>
       </div>
       {(error || actionError) && (
-        <div role="alert" className="status-message">
+        <div role="alert" className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">
           {actionError || "Unable to load orders."}{" "}
           <Button variant="ghost" onClick={refetch}>
             Retry
           </Button>
         </div>
       )}
-      <div className="table-scroll" aria-busy={isFetching}>
-        <table>
-          <thead>
-            <tr>
-              <th>Order</th>
-              <th>Customer</th>
-              <th>Delivery</th>
-              <th>Items</th>
-              <th>Subtotal</th>
-              <th>Status</th>
-              <th>Review</th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableContainer aria-busy={isFetching}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Order</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Delivery</TableHead>
+              <TableHead>Items</TableHead>
+              <TableHead>Item subtotal</TableHead>
+              <TableHead>Delivery charge</TableHead>
+              <TableHead>Grand total</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Review</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {data?.items.map((order) => (
-              <tr key={order.id}>
-                <td>
+              <TableRow key={order.id}>
+                <TableCell className="min-w-[180px]">
                   <strong>{order.id.slice(0, 8).toUpperCase()}</strong>
-                  <small>{new Date(order.createdAt).toLocaleString()}</small>
-                </td>
-                <td>
+                  <small className="mt-1 block text-[10px] text-muted">{new Date(order.createdAt).toLocaleString()}</small>
+                </TableCell>
+                <TableCell className="min-w-[180px]">
                   {order.customerName}
-                  <small>
+                  <small className="mt-1 block text-[10px] text-muted">
                     <a href={`mailto:${order.email}`}>{order.email}</a>
                     <br />
                     {order.phone}
                   </small>
-                </td>
-                <td>
-                  {order.deliveryArea}
-                  <small>{order.deliveryAddress}</small>
-                  {order.customerNote && <small>Note: {order.customerNote}</small>}
-                </td>
-                <td>
+                </TableCell>
+                <TableCell className="min-w-[180px]">
+                  {order.district ?? (order.deliveryArea || "District not set")}
+                  {order.postcode && <small className="mt-1 block text-[10px] text-muted">Postcode: {order.postcode}</small>}
+                  <small className="mt-1 block text-[10px] text-muted">{order.deliveryAddress}</small>
+                  {order.district && order.deliveryArea && <small className="mt-1 block text-[10px] text-muted">Legacy area: {order.deliveryArea}</small>}
+                  {order.customerNote && <small className="mt-1 block text-[10px] text-muted">Note: {order.customerNote}</small>}
+                </TableCell>
+                <TableCell className="min-w-[180px]">
                   {order.items.map((item) => (
-                    <small key={item.id}>
+                    <small className="mt-1 block text-[10px] text-muted" key={item.id}>
                       {item.quantity} × {item.productName} · {item.variantName} ({item.sku})
                     </small>
                   ))}
-                </td>
-                <td>{money(order.subtotal)}</td>
-                <td>
-                  <span className={`status-tag ${order.status.toLowerCase()}`}>{order.status.replaceAll("_", " ")}</span>
-                </td>
-                <td>
+                </TableCell>
+                <TableCell>{money(order.subtotal)}</TableCell>
+                <TableCell>{money(order.deliveryCharge)}</TableCell>
+                <TableCell>{money(order.total)}</TableCell>
+                <TableCell>
+                  <span
+                    className={`inline-flex items-center gap-[5px] whitespace-nowrap rounded-[3px] bg-[#fff0d6] px-[7px] py-1 text-[9px] font-semibold text-[#805d1b] ${order.status === "CONFIRMED" ? "bg-[#e0ede1] text-[#2d5a39]" : order.status === "REJECTED" ? "bg-[#ece8e5] text-[#6b5c53]" : ""}`}
+                  >
+                    {order.status.replaceAll("_", " ")}
+                  </span>
+                </TableCell>
+                <TableCell>
                   {order.status === "PENDING_REVIEW" ? (
-                    <div className="row-actions">
-                      <Button variant="ghost" size="icon" title="Edit order" aria-label={`Edit order for ${order.customerName}`} onClick={() => setEditingOrder(order)}>
+                    <div className="flex items-center gap-[3px] whitespace-nowrap">
+                      <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Edit order" aria-label={`Edit order for ${order.customerName}`} onClick={() => setEditingOrder(order)}>
                         <Pencil size={15} />
                       </Button>
-                      <Button variant="ghost" size="icon" title="Confirm order and consume reserved stock" aria-label="Confirm order" disabled={isLoading} onClick={() => void review(order.id, "CONFIRMED")}>
+                      <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Confirm order and consume reserved stock" aria-label="Confirm order" disabled={isLoading} onClick={() => void review(order.id, "CONFIRMED")}>
                         <Check size={16} />
                       </Button>
                       <Confirm
@@ -254,7 +306,7 @@ export default function OrdersPage() {
                         description="Rejecting this order releases its reserved stock."
                         onConfirm={() => review(order.id, "REJECTED")}
                         trigger={
-                          <Button variant="ghost" size="icon" title="Reject order" aria-label="Reject order" disabled={isLoading}>
+                          <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Reject order" aria-label="Reject order" disabled={isLoading}>
                             <X size={16} />
                           </Button>
                         }
@@ -263,13 +315,13 @@ export default function OrdersPage() {
                   ) : (
                     "-"
                   )}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
-      {!data?.items.length && !isFetching && <div className="empty-state">No orders yet.</div>}
+          </TableBody>
+        </Table>
+      </TableContainer>
+      {!data?.items.length && !isFetching && <div className="px-5 py-20 text-center">No orders yet.</div>}
       {editingOrder && <OrderEditor key={editingOrder.id} order={editingOrder} close={() => setEditingOrder(undefined)} />}
     </>
   );

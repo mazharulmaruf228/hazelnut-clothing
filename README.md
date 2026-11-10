@@ -115,8 +115,13 @@ Use the CMS to add additional ADMIN/EDITOR users.
 - Existing products start with zero stock after migration. Set stock in the
   product's variant editor before accepting orders. The development seed assigns
   ten units to newly created demo variants.
-- Orders are unpaid. Delivery charges are not calculated in checkout; admins
-  must confirm delivery details with the customer before confirming the order.
+- Orders are unpaid. Checkout collects a Bangladesh district and postcode and
+  calculates Tk 80 delivery for Dhaka district or Tk 100 for any other district.
+  The backend determines and stores the fee; admins can change the district on a
+  pending order to recalculate it. Existing orders retain their free-form address
+  and start with no delivery fee.
+- Guests can look up one order using its order number and the checkout email or
+  phone number. There are no customer accounts or all-orders-by-contact listing.
 - `backend/openapi.yaml` documents the public order submission and admin review
   endpoints. No customer accounts, payment processing, or carrier integration is
   included in this stage.

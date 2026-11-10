@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const schema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -42,7 +43,7 @@ function CategoryForm({ category, categories, close }: { category?: Category; ca
   });
   return (
     <form
-      className="form-section"
+      className="border-t border-line py-[25px]"
       onSubmit={handleSubmit(async (values) => {
         setError("");
         try {
@@ -58,8 +59,8 @@ function CategoryForm({ category, categories, close }: { category?: Category; ca
         }
       })}
     >
-      <h2>{category ? "Edit category" : "New category"}</h2>
-      <div className="form-grid">
+      <h2 className="mb-5">{category ? "Edit category" : "New category"}</h2>
+      <div className="grid grid-cols-2 gap-5 max-[700px]:grid-cols-1 max-[700px]:gap-4">
         <Label>
           Name
           <Input
@@ -110,11 +111,11 @@ function CategoryForm({ category, categories, close }: { category?: Category; ca
         </Label>
       </div>
       {(error || Object.keys(errors).length > 0) && (
-        <p className="status-message" role="alert">
+        <p className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]" role="alert">
           {error || "Check name, slug and description."}
         </p>
       )}
-      <div className="form-actions">
+      <div className="mt-[22px] flex flex-wrap items-center gap-3 text-[11px]">
         <Button disabled={isLoading}>
           <Save size={15} /> Save category
         </Button>
@@ -131,46 +132,46 @@ export default function Categories() {
   const [change] = useChangeMutation();
   return (
     <>
-      <div className="admin-title">
+      <div className="mb-8 flex items-center justify-between gap-5 max-[700px]:mb-6 max-[700px]:items-start max-[700px]:gap-3">
         <div>
-          <span className="eyebrow">Catalogue</span>
-          <h1>Categories</h1>
+          <span className="text-[9px] uppercase tracking-[1.6px] text-muted">Catalogue</span>
+          <h1 className="mt-2 overflow-wrap-anywhere font-sans text-[28px] font-medium leading-[1.2] max-[700px]:text-[25px]">Categories</h1>
         </div>
         <Button onClick={() => setEditing("new")}>
           <Plus size={16} /> Add category
         </Button>
       </div>
       {error && (
-        <div className="status-message">
+        <div className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">
           Unable to load categories.{" "}
           <Button variant="ghost" onClick={refetch}>
             Retry
           </Button>
         </div>
       )}
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Category</th>
-              <th>Slug</th>
-              <th>Parent</th>
-              <th>Products</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableContainer>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Category</TableHead>
+              <TableHead>Slug</TableHead>
+              <TableHead>Parent</TableHead>
+              <TableHead>Products</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {data?.items.map((category) => (
-              <tr key={category.id}>
-                <td>
+              <TableRow key={category.id}>
+                <TableCell className="min-w-[180px]">
                   <strong>{category.name}</strong>
-                </td>
-                <td>{category.slug}</td>
-                <td>{data.items.find((parent) => parent.id === category.parentId)?.name || "-"}</td>
-                <td>{category._count?.products || 0}</td>
-                <td>
-                  <div className="row-actions">
-                    <Button variant="ghost" size="icon" title="Edit category" aria-label={`Edit ${category.name}`} onClick={() => setEditing(category.id)}>
+                </TableCell>
+                <TableCell>{category.slug}</TableCell>
+                <TableCell>{data.items.find((parent) => parent.id === category.parentId)?.name || "-"}</TableCell>
+                <TableCell>{category._count?.products || 0}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-[3px] whitespace-nowrap">
+                    <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Edit category" aria-label={`Edit ${category.name}`} onClick={() => setEditing(category.id)}>
                       <Pencil size={15} />
                     </Button>
                     <Confirm
@@ -183,19 +184,19 @@ export default function Categories() {
                         }).unwrap()
                       }
                       trigger={
-                        <Button variant="ghost" size="icon" title="Delete category" aria-label={`Delete ${category.name}`}>
+                        <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Delete category" aria-label={`Delete ${category.name}`}>
                           <Trash2 size={15} />
                         </Button>
                       }
                     />
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
-      {data?.items.length === 0 && <p className="empty-state">No categories yet.</p>}
+          </TableBody>
+        </Table>
+      </TableContainer>
+      {data?.items.length === 0 && <p className="min-h-[250px] px-5 py-20 text-center">No categories yet.</p>}
       {editing && <CategoryForm key={editing} category={data?.items.find((category) => category.id === editing)} categories={data?.items || []} close={() => setEditing(undefined)} />}
     </>
   );

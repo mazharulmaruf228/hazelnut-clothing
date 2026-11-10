@@ -11,9 +11,9 @@ export default function EditProduct({ params }: { params: Promise<{ id: string }
   if (isLoading) return <p role="status">Loading product...</p>;
   if (!data)
     return (
-      <div className="empty-state">
+      <div className="grid min-h-[250px] place-items-center px-5 py-20 text-center">
         <h2>Unable to load product.</h2>
-        <p>{errorMessage(error)}</p>
+        <p className="my-3 mb-[22px] text-muted">{errorMessage(error)}</p>
         <Button onClick={refetch}>Retry</Button>
       </div>
     );

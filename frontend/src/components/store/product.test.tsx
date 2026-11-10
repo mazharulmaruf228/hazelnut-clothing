@@ -82,7 +82,7 @@ describe("public product controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "XL" }));
     expect(screen.getByText("SHIRT-XL")).toBeVisible();
     expect(screen.getByRole("button", { name: "XL" })).toHaveAttribute("aria-pressed", "true");
-    expect(document.querySelector(".detail-price")).toHaveTextContent("1,080");
+    expect(screen.getByText("BDT 1,080.00")).toBeVisible();
     expect(window.location.search).toContain("variant=large");
   });
   it("honors a linked initial variant", () => {

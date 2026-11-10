@@ -84,9 +84,12 @@ model Order {
   email           String
   phone           String
   deliveryAddress String
-  deliveryArea    String
+  deliveryArea    String      @default("")
+  district        String?
+  postcode        String?
   customerNote    String      @default("")
   subtotal        Decimal     @db.Decimal(12, 2)
+  deliveryCharge  Decimal     @default(0) @db.Decimal(12, 2)
   items           OrderItem[]
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt

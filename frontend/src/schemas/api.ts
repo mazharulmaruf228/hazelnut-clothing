@@ -94,11 +94,23 @@ export const orderSchema = z.object({
   phone: z.string(),
   deliveryAddress: z.string(),
   deliveryArea: z.string(),
+  district: z.string().nullable(),
+  postcode: z.string().nullable(),
   customerNote: z.string(),
   subtotal: z.string(),
+  deliveryCharge: z.string(),
+  total: z.string(),
   items: z.array(orderItemSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 
 export type Order = z.infer<typeof orderSchema>;
+export const orderReceiptSchema = z.object({
+  id: z.string(),
+  status: z.enum(["PENDING_REVIEW", "CONFIRMED", "REJECTED"]),
+  subtotal: z.string(),
+  deliveryCharge: z.string(),
+  total: z.string(),
+});
+export type OrderReceipt = z.infer<typeof orderReceiptSchema>;

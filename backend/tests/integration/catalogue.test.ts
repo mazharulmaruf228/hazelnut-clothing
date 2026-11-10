@@ -181,9 +181,11 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
       email: "guest@test.invalid",
       phone: "+8801700000000",
       deliveryAddress: "12 Example Road, Dhaka",
-      deliveryArea: "Dhaka",
+      district: "Dhaka",
+      postcode: "1200",
       customerNote: "Call on arrival",
     };
+    const editDetails = { ...details, deliveryArea: "" };
     const attempts = await Promise.all(
       [0, 1].map(() =>
         request(app)
@@ -193,7 +195,14 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
     );
     expect(attempts.map((response) => response.status).sort()).toEqual([201, 409]);
     const pending = attempts.find((response) => response.status === 201)!.body;
-    expect(pending).toMatchObject({ status: "PENDING_REVIEW", subtotal: "2700.00" });
+    expect(pending).toMatchObject({ status: "PENDING_REVIEW", subtotal: "2700.00", deliveryCharge: "80.00", total: "2780.00" });
+    const deliveryOptions = await request(app).get("/api/orders/delivery-options");
+    expect(deliveryOptions.status).toBe(200);
+    expect(deliveryOptions.body.items).toHaveLength(64);
+    const receipt = await request(app).post("/api/orders/lookup").send({ orderNumber: pending.id, email: details.email });
+    expect(receipt.status).toBe(200);
+    expect(receipt.body).toMatchObject({ id: pending.id, subtotal: "2700.00", deliveryCharge: "80.00", total: "2780.00" });
+    expect((await request(app).post("/api/orders/lookup").send({ orderNumber: pending.id, email: "wrong@test.invalid" })).status).toBe(404);
     expect((await db.productVariant.findUniqueOrThrow({ where: { id: defaultId } })).stockReserved).toBe(3);
 
     const rejected = await admin.patch(`/api/admin/orders/${pending.id}/status`).set(adminHeaders).send({ status: "REJECTED" });
@@ -206,7 +215,7 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
         await admin
           .patch(`/api/admin/orders/${pending.id}`)
           .set(adminHeaders)
-          .send({ ...details, updatedAt: rejectedOrder.updatedAt, items: [{ variantId: defaultId, quantity: 1 }] })
+          .send({ ...editDetails, updatedAt: rejectedOrder.updatedAt, items: [{ variantId: defaultId, quantity: 1 }] })
       ).status,
     ).toBe(409);
 
@@ -214,6 +223,10 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
       .post("/api/orders")
       .send({ ...details, items: [{ variantId: defaultId, quantity: 1, unitPrice: "0.01" }] });
     expect(forgedPrice.status).toBe(400);
+    const forgedFee = await request(app)
+      .post("/api/orders")
+      .send({ ...details, deliveryCharge: "0.00", items: [{ variantId: defaultId, quantity: 1 }] });
+    expect(forgedFee.status).toBe(400);
 
     const editable = await request(app)
       .post("/api/orders")
@@ -226,14 +239,16 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
       .patch(`/api/admin/orders/${editable.body.id}`)
       .set(adminHeaders)
       .send({
-        ...details,
+        ...editDetails,
         customerName: "Updated Guest",
         deliveryAddress: "14 Example Road, Dhaka",
+        district: "Khulna",
+        postcode: "9000",
         updatedAt: opened.updatedAt,
         items: [{ variantId: alternateId, quantity: 3 }],
       });
     expect(changed.status).toBe(200);
-    expect(changed.body).toMatchObject({ status: "PENDING_REVIEW", customerName: "Updated Guest", subtotal: "3510.00" });
+    expect(changed.body).toMatchObject({ status: "PENDING_REVIEW", customerName: "Updated Guest", subtotal: "3510.00", district: "Khulna", postcode: "9000", deliveryCharge: "100.00", total: "3610.00" });
     expect(changed.body.items[0]).toMatchObject({ sku: "TEST-EDIT-L", quantity: 3, unitPrice: "1170.00", lineTotal: "3510.00" });
     expect(await db.productVariant.findUniqueOrThrow({ where: { id: defaultId } })).toMatchObject({ stockReserved: 0 });
     expect(await db.productVariant.findUniqueOrThrow({ where: { id: alternateId } })).toMatchObject({ stockReserved: 3 });
@@ -243,28 +258,30 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
       .patch(`/api/admin/orders/${editable.body.id}`)
       .set(adminHeaders)
       .send({
-        ...details,
+        ...editDetails,
         customerName: "Updated Contact",
         deliveryAddress: "16 Example Road, Dhaka",
+        district: "Khulna",
+        postcode: "9000",
         updatedAt: changed.body.updatedAt,
         items: [{ variantId: alternateId, quantity: 3 }],
       });
     expect(contactOnly.status).toBe(200);
-    expect(contactOnly.body).toMatchObject({ customerName: "Updated Contact", subtotal: "3510.00" });
+    expect(contactOnly.body).toMatchObject({ customerName: "Updated Contact", subtotal: "3510.00", deliveryCharge: "100.00", total: "3610.00" });
     expect(contactOnly.body.items[0]).toMatchObject({ unitPrice: "1170.00", lineTotal: "3510.00" });
     expect(
       (
         await admin
           .patch(`/api/admin/orders/${editable.body.id}`)
           .set(adminHeaders)
-          .send({ ...details, updatedAt: changed.body.updatedAt, items: [{ variantId: alternateId, quantity: 3 }] })
+          .send({ ...editDetails, updatedAt: changed.body.updatedAt, items: [{ variantId: alternateId, quantity: 3 }] })
       ).status,
     ).toBe(409);
     const noStock = await admin
       .patch(`/api/admin/orders/${editable.body.id}`)
       .set(adminHeaders)
       .send({
-        ...details,
+        ...editDetails,
         updatedAt: contactOnly.body.updatedAt,
         items: [{ variantId: alternateId, quantity: 6 }],
       });
@@ -284,11 +301,60 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
         await admin
           .patch(`/api/admin/orders/${complete.body.id}`)
           .set(adminHeaders)
-          .send({ ...details, updatedAt: confirmed.body.updatedAt, items: [{ variantId: defaultId, quantity: 4 }] })
+          .send({ ...editDetails, updatedAt: confirmed.body.updatedAt, items: [{ variantId: defaultId, quantity: 4 }] })
       ).status,
     ).toBe(409);
     expect(await db.productVariant.findUniqueOrThrow({ where: { id: defaultId } })).toMatchObject({ stockOnHand: 0, stockReserved: 0 });
-    expect((await admin.get("/api/admin/orders")).body.items).toHaveLength(3);
+
+    const legacy = await db.order.create({
+      data: {
+        customerName: "Legacy Guest",
+        email: "legacy@test.invalid",
+        phone: "+8801700000001",
+        deliveryAddress: "Old free-form address",
+        deliveryArea: "Old free-form area",
+        customerNote: "",
+        subtotal: "900.00",
+        items: {
+          create: [{
+            productId,
+            variantId: defaultId,
+            productName: "Test Shirt",
+            variantName: "Medium",
+            sku: "TEST-M",
+            quantity: 1,
+            unitPrice: "900.00",
+            lineTotal: "900.00",
+          }],
+        },
+      },
+    });
+    expect(legacy.deliveryCharge.toFixed(2)).toBe("0.00");
+    const legacyEdit = {
+      ...editDetails,
+      customerName: legacy.customerName,
+      email: legacy.email,
+      phone: legacy.phone,
+      deliveryAddress: legacy.deliveryAddress,
+      deliveryArea: legacy.deliveryArea,
+      district: null,
+      postcode: null,
+      customerNote: legacy.customerNote,
+      updatedAt: legacy.updatedAt.toISOString(),
+      items: [{ variantId: defaultId, quantity: 1 }],
+    };
+    const unchangedLegacy = await admin.patch(`/api/admin/orders/${legacy.id}`).set(adminHeaders).send(legacyEdit);
+    expect(unchangedLegacy.status).toBe(200);
+    expect(unchangedLegacy.body).toMatchObject({ deliveryArea: "Old free-form area", district: null, postcode: null, deliveryCharge: "0.00", total: "900.00" });
+    const explicitlyPricedLegacy = await admin.patch(`/api/admin/orders/${legacy.id}`).set(adminHeaders).send({
+      ...legacyEdit,
+      district: "Dhaka",
+      postcode: "1200",
+      updatedAt: unchangedLegacy.body.updatedAt,
+    });
+    expect(explicitlyPricedLegacy.status).toBe(200);
+    expect(explicitlyPricedLegacy.body).toMatchObject({ deliveryArea: "Old free-form area", district: "Dhaka", deliveryCharge: "80.00", total: "980.00" });
+    expect((await admin.get("/api/admin/orders")).body.items).toHaveLength(4);
   });
   it("reorders a complete owned image list atomically and rejects stale lists", async () => {
     expect(

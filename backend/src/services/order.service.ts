@@ -4,7 +4,9 @@ import { write } from "../config/database.ts";
 import { orderModel } from "../models/order.model.ts";
 import { HttpError } from "../utils/http-error.ts";
 import { effectivePrice } from "../utils/money.ts";
+import { deliveryChargeFor, deliveryOptions } from "../utils/delivery.ts";
 import type { createOrderInput, orderEditInput } from "../validators/catalogue.validator.ts";
+import type { orderLookupInput } from "../validators/catalogue.validator.ts";
 
 type CreateOrderInput = z.infer<typeof createOrderInput>;
 type OrderEditInput = z.infer<typeof orderEditInput>;
@@ -13,6 +15,8 @@ function orderDto(order: Awaited<ReturnType<typeof orderModel.findById>>) {
   return {
     ...order,
     subtotal: order.subtotal.toFixed(2),
+    deliveryCharge: order.deliveryCharge.toFixed(2),
+    total: order.subtotal.add(order.deliveryCharge).toFixed(2),
     items: order.items.map((item) => ({ ...item, unitPrice: item.unitPrice.toFixed(2), lineTotal: item.lineTotal.toFixed(2) })),
   };
 }
@@ -55,19 +59,37 @@ export async function createOrder(input: CreateOrderInput) {
         email: input.email,
         phone: input.phone,
         deliveryAddress: input.deliveryAddress,
-        deliveryArea: input.deliveryArea,
+        district: input.district,
+        postcode: input.postcode,
         customerNote: input.customerNote,
         subtotal,
+        deliveryCharge: deliveryChargeFor(input.district),
         items: { create: orderItems },
       },
       client,
     );
-    return { id: order.id, status: order.status, subtotal: order.subtotal.toFixed(2) };
+    return {
+      id: order.id,
+      status: order.status,
+      subtotal: order.subtotal.toFixed(2),
+      deliveryCharge: order.deliveryCharge.toFixed(2),
+      total: order.subtotal.add(order.deliveryCharge).toFixed(2),
+    };
   });
 }
 
 export async function listOrders() {
   return (await orderModel.list()).map(orderDto);
+}
+
+export function getDeliveryOptions() {
+  return deliveryOptions;
+}
+
+export async function lookupGuestOrder(input: z.infer<typeof orderLookupInput>) {
+  const order = await orderModel.findForGuestLookup(input.orderNumber, input.email, input.phone);
+  if (!order) throw new HttpError(404, "No order matched that order number and contact detail");
+  return orderDto(order);
 }
 
 export async function editOrder(id: string, input: OrderEditInput) {
@@ -79,6 +101,7 @@ export async function editOrder(id: string, input: OrderEditInput) {
     const previousItems = order.items.map((item) => ({ variantId: item.variantId, quantity: item.quantity })).sort((first, second) => (first.variantId ?? "").localeCompare(second.variantId ?? ""));
     const nextItems = [...input.items].sort((first, second) => first.variantId.localeCompare(second.variantId));
     const itemsChanged = previousItems.length !== nextItems.length || previousItems.some((item, index) => item.variantId !== nextItems[index]?.variantId || item.quantity !== nextItems[index]?.quantity);
+    const districtChanged = input.district !== order.district;
 
     let subtotal = order.subtotal;
     if (itemsChanged) {
@@ -134,6 +157,7 @@ export async function editOrder(id: string, input: OrderEditInput) {
       await orderModel.replaceItems(id, orderItems, client);
     }
 
+    const deliveryCharge = districtChanged ? (input.district ? deliveryChargeFor(input.district) : new Prisma.Decimal(0)) : order.deliveryCharge;
     return orderDto(
       await orderModel.update(
         id,
@@ -143,8 +167,11 @@ export async function editOrder(id: string, input: OrderEditInput) {
           phone: input.phone,
           deliveryAddress: input.deliveryAddress,
           deliveryArea: input.deliveryArea,
+          district: input.district,
+          postcode: input.postcode,
           customerNote: input.customerNote,
           ...(itemsChanged ? { subtotal } : {}),
+          ...(districtChanged ? { deliveryCharge } : {}),
         },
         client,
       ),

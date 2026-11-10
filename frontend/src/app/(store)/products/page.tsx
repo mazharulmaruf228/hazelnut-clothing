@@ -9,9 +9,9 @@ export const metadata: Metadata = {
 export default async function Products({ searchParams }: { searchParams: Promise<CatalogueParams> }) {
   return (
     <>
-      <div className="page-intro">
-        <span className="eyebrow">Everyday, with intention.</span>
-        <h1>Clothing</h1>
+      <div className="mx-auto max-w-[1500px] px-[5%] pt-[35px] max-[700px]:pt-[25px]">
+        <span className="text-[10px] font-semibold uppercase tracking-[1.6px]">Everyday, with intention.</span>
+        <h1 className="mt-2">Clothing</h1>
       </div>
       <Catalogue params={await searchParams} />
     </>

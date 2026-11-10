@@ -14,6 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { StatusBadge } from "@/components/ui/status-badge";
 
 const schema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -36,38 +38,38 @@ function PasswordReset({ user }: { user: AdminUser }) {
           </Button>
         </DialogTrigger>
         <DialogContent>
-            <DialogTitle>Reset password</DialogTitle>
-            <DialogDescription>{user.email}</DialogDescription>
-            <form
-              className="stack-form"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                const password = String(new FormData(event.currentTarget).get("password"));
-                try {
-                  await change({
-                    url: `/admin/users/${user.id}`,
-                    method: "PATCH",
-                    body: { password },
-                  }).unwrap();
-                  setOpen(false);
-                } catch (error) {
-                  setError(errorMessage(error));
-                }
-              }}
-            >
-              <Label>
-                New password
-                <Input type="password" name="password" minLength={6} maxLength={200} required autoComplete="new-password" />
-              </Label>
-              {error && (
-                <p role="alert" className="status-message">
-                  {error}
-                </p>
-              )}
-              <Button disabled={isLoading}>Reset password</Button>
-            </form>
+          <DialogTitle>Reset password</DialogTitle>
+          <DialogDescription>{user.email}</DialogDescription>
+          <form
+            className="grid gap-5"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const password = String(new FormData(event.currentTarget).get("password"));
+              try {
+                await change({
+                  url: `/admin/users/${user.id}`,
+                  method: "PATCH",
+                  body: { password },
+                }).unwrap();
+                setOpen(false);
+              } catch (error) {
+                setError(errorMessage(error));
+              }
+            }}
+          >
+            <Label>
+              New password
+              <Input type="password" name="password" minLength={6} maxLength={200} required autoComplete="new-password" />
+            </Label>
+            {error && (
+              <p role="alert" className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">
+                {error}
+              </p>
+            )}
+            <Button disabled={isLoading}>Reset password</Button>
+          </form>
         </DialogContent>
-        </Dialog>
+      </Dialog>
     </>
   );
 }
@@ -103,45 +105,49 @@ export default function Users() {
   }
   if (session?.user.role !== "ADMIN")
     return (
-      <div className="empty-state">
+      <div className="grid min-h-[250px] place-items-center px-5 py-20 text-center">
         <h2>Administrator access required.</h2>
       </div>
     );
   return (
     <>
-      <div className="admin-title">
+      <div className="mb-8 flex items-center justify-between gap-5 max-[700px]:mb-6 max-[700px]:items-start max-[700px]:gap-3">
         <div>
-          <span className="eyebrow">Access management</span>
-          <h1>Users</h1>
+          <span className="text-[9px] uppercase tracking-[1.6px] text-muted">Access management</span>
+          <h1 className="mt-2 overflow-wrap-anywhere font-sans text-[28px] font-medium leading-[1.2] max-[700px]:text-[25px]">Users</h1>
         </div>
         <Button onClick={() => setCreating(!creating)}>
           <UserRoundPlus size={16} /> Add user
         </Button>
       </div>
       {(message || error) && (
-        <p className="status-message" role="alert">
+        <p className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]" role="alert">
           {message || "Unable to load users."}
-          {error && <Button variant="ghost" onClick={refetch}>Retry</Button>}
+          {error && (
+            <Button variant="ghost" onClick={refetch}>
+              Retry
+            </Button>
+          )}
         </p>
       )}
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableContainer>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>User</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {data?.items.map((user) => (
-              <tr key={user.id}>
-                <td>
+              <TableRow key={user.id}>
+                <TableCell className="min-w-[180px]">
                   <strong>{user.name}</strong>
-                  <small>{user.email}</small>
-                </td>
-                <td>
+                  <small className="mt-1 block text-[10px] text-muted">{user.email}</small>
+                </TableCell>
+                <TableCell>
                   <Select value={user.role} disabled={isLoading || user.id === session.user.id} onValueChange={(role) => void update(user.id, { role })}>
                     <SelectTrigger aria-label={`Role for ${user.name}`}>
                       <SelectValue />
@@ -151,12 +157,12 @@ export default function Users() {
                       <SelectItem value="ADMIN">ADMIN</SelectItem>
                     </SelectContent>
                   </Select>
-                </td>
-                <td>
-                  <span className={`status-tag ${user.isActive ? "published" : "draft"}`}>{!user.approvedAt ? "PENDING" : user.isActive ? "ACTIVE" : "DISABLED"}</span>
-                </td>
-                <td>
-                  <div className="row-actions">
+                </TableCell>
+                <TableCell>
+                  <StatusBadge tone={!user.approvedAt ? "warning" : user.isActive ? "positive" : "muted"}>{!user.approvedAt ? "PENDING" : user.isActive ? "ACTIVE" : "DISABLED"}</StatusBadge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-[3px] whitespace-nowrap">
                     {!user.approvedAt ? (
                       <Button size="sm" variant="outline" disabled={isLoading} onClick={() => void update(user.id, { approve: true })}>
                         <Check size={14} /> Approve
@@ -181,15 +187,15 @@ export default function Users() {
                     )}
                     <PasswordReset user={user} />
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableContainer>
       {creating && (
         <form
-          className="form-section"
+          className="border-t border-line py-[25px]"
           onSubmit={handleSubmit(async (values) => {
             setMessage("");
             try {
@@ -205,8 +211,8 @@ export default function Users() {
             }
           })}
         >
-          <h2>New user</h2>
-          <div className="form-grid">
+          <h2 className="mb-5">New user</h2>
+          <div className="grid grid-cols-2 gap-5 max-[700px]:grid-cols-1 max-[700px]:gap-4">
             <Label>
               Name
               <Input {...register("name")} />
@@ -238,8 +244,8 @@ export default function Users() {
               />
             </Label>
           </div>
-          {Object.keys(errors).length > 0 && <p className="status-message">Enter valid details and a password of at least 6 characters.</p>}
-          <div className="form-actions">
+          {Object.keys(errors).length > 0 && <p className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">Enter valid details and a password of at least 6 characters.</p>}
+          <div className="mt-[22px] flex flex-wrap items-center gap-3 text-[11px]">
             <Button disabled={isLoading}>
               <Plus size={15} /> Create user
             </Button>
