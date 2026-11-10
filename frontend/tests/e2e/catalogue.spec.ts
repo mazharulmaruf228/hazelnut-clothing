@@ -100,7 +100,7 @@ test("guest checkout reserves stock for admin review", async ({ page }) => {
   await page.getByLabel("Name", { exact: true }).fill(customerName);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Phone", { exact: true }).fill("+8801700000000");
-  await page.getByLabel("District", { exact: true }).selectOption("Dhaka");
+  await page.getByRole("combobox", { name: "District", exact: true }).selectOption("Dhaka");
   await page.getByLabel("Postcode", { exact: true }).fill("1207");
   await page.getByLabel("House / road", { exact: true }).fill("12 Example Road, Dhaka");
   await page.getByRole("button", { name: "Place order for review" }).click();
@@ -114,9 +114,9 @@ test("guest checkout reserves stock for admin review", async ({ page }) => {
   const editor = page.getByRole("dialog");
   await expect(editor.getByRole("heading", { name: /Edit order/ })).toBeVisible();
   await editor.getByLabel("Customer name").fill("Updated Guest");
-  await editor.getByRole("textbox", { name: "Delivery address" }).fill("14 Example Road, Dhaka");
+  await editor.getByRole("textbox", { name: "House / road", exact: true }).fill("14 Example Road, Dhaka");
   await editor.getByLabel("Quantity for item 1").fill("2");
-  await expect(editor.getByText("Recalculated subtotal")).toBeVisible();
+  await expect(editor.getByText("Recalculated item subtotal", { exact: true })).toBeVisible();
   await expect(editor.getByText("BDT 3,402.00")).toBeVisible();
   await editor.getByRole("button", { name: "Save order" }).click();
   await expect(editor).not.toBeVisible();
