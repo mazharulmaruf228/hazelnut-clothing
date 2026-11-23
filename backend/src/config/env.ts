@@ -8,6 +8,12 @@ export const config = z
     PORT: z.coerce.number().int().positive().default(4000),
     DATABASE_URL: z.string().default("postgresql://catalogue:change-me@127.0.0.1:55432/catalogue?schema=public"),
     PUBLIC_ORIGIN: z.url().default("http://localhost:3000"),
+    ADDITIONAL_ALLOWED_ORIGINS: z.string().default("")
+      .transform((value) => value.split(",").map((origin) => origin.trim()).filter(Boolean))
+      .pipe(z.array(z.url().refine((value) => {
+        const url = URL.parse(value);
+        return url !== null && (url.protocol === "http:" || url.protocol === "https:") && url.origin === value;
+      }, "Expected an HTTP(S) origin without a path or trailing slash"))),
     JWT_SECRET: z
       .string()
       .min(32)
@@ -37,3 +43,6 @@ if (config.PAYMENT_MODE === "sslcommerz_sandbox") {
   if (!config.SSLCOMMERZ_STORE_ID || !config.SSLCOMMERZ_STORE_PASSWORD || !validOrigin) throw new Error("Sandbox payment requires store credentials and an HTTPS PAYMENT_CALLBACK_ORIGIN matching PUBLIC_ORIGIN");
 }
 export const secureCookies = production;
+export function isAllowedOrigin(origin: string | undefined): boolean {
+  return origin !== undefined && (origin === config.PUBLIC_ORIGIN || config.ADDITIONAL_ALLOWED_ORIGINS.includes(origin));
+}
