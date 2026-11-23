@@ -1,6 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { app } from "./app.ts";
+import { config } from "./config/env.ts";
 
 describe("API perimeter without a database", () => {
   it("is live", async () => {
@@ -21,6 +22,9 @@ describe("API perimeter without a database", () => {
     expect(response.body.items).toHaveLength(64);
     expect(response.body.items.find((item: { district: string }) => item.district === "Dhaka")).toMatchObject({ deliveryCharge: "80.00" });
     expect(response.body.items.find((item: { district: string }) => item.district === "Khulna")).toMatchObject({ deliveryCharge: "100.00" });
+  });
+  it("reports the configured checkout mode", async () => {
+    expect((await request(app).get("/api/orders/payment-mode")).body).toEqual({ mode: config.PAYMENT_MODE });
   });
   it("rejects malformed or ambiguous guest order lookup input", async () => {
     const response = await request(app).post("/api/orders/lookup").send({

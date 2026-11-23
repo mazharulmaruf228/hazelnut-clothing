@@ -3,7 +3,8 @@
 Next.js storefront and CMS with a separate Express REST API, Prisma/PostgreSQL,
 Cloudinary media and email/password plus Google admin authentication. BDT is the
 single currency. Guest cart, inventory reservations, and manual order review are
-available; online payments and delivery integrations are not yet included.
+available. SSLCOMMERZ hosted checkout is available in sandbox mode only; live
+payments and delivery integrations are not included.
 
 ## Structure
 
@@ -82,6 +83,19 @@ Use the CMS to add additional ADMIN/EDITOR users.
   Existing local accounts are never linked by email alone; sign in with a password,
   then use Account -> Link Google account. Unconfigured Google login reports that
   it is unavailable; it does not bypass authentication.
+- **SSLCOMMERZ sandbox:** the default `PAYMENT_MODE=offline` preserves the current
+  checkout. For testing on an isolated deployment and database, register a sandbox
+  store at https://developer.sslcommerz.com/registration/ and privately configure
+  `SSLCOMMERZ_STORE_ID`, `SSLCOMMERZ_STORE_PASSWORD`, and an internet-reachable
+  HTTPS `PAYMENT_CALLBACK_ORIGIN` matching `PUBLIC_ORIGIN` (the public storefront
+  origin, without a trailing slash). Set
+  `PAYMENT_MODE=sslcommerz_sandbox`, apply migrations and restart the API. Configure
+  the provider IPN URL as `<origin>/api/payments/ipn`. The public origin must route
+  `/api/payments/*` to the API. Use test credentials and test orders only: sandbox
+  payments do not collect real money and must not be offered to real customers.
+  Return to `PAYMENT_MODE=offline` and restart the API to switch new orders back;
+  retain the sandbox credentials and callback route until all existing attempts
+  have been reconciled. `PAYMENT_HOLD_MINUTES` defaults to 30.
 - Seed photographs are externally hosted Unsplash examples for development.
   Replace them with your licensed product photographs in Cloudinary before launch.
 
@@ -111,20 +125,37 @@ Use the CMS to add additional ADMIN/EDITOR users.
   quantities only; the API rechecks published/active state and calculates prices.
 - Stock is tracked per variant. New orders reserve stock atomically and enter
   `PENDING_REVIEW`; admin confirmation consumes the reservation, while rejection
-  releases it. Pending reservations do not expire automatically yet.
+  releases it. Offline pending reservations do not expire automatically.
 - Existing products start with zero stock after migration. Set stock in the
   product's variant editor before accepting orders. The development seed assigns
   ten units to newly created demo variants.
-- Orders are unpaid. Checkout collects a Bangladesh district and postcode and
+- Offline orders are unpaid. Checkout collects a Bangladesh district and postcode and
   calculates Tk 80 delivery for Dhaka district or Tk 100 for any other district.
   The backend determines and stores the fee; admins can change the district on a
   pending order to recalculate it. Existing orders retain their free-form address
   and start with no delivery fee.
 - Guests can look up one order using its order number and the checkout email or
-  phone number. There are no customer accounts or all-orders-by-contact listing.
-- `backend/openapi.yaml` documents the public order submission and admin review
-  endpoints. No customer accounts, payment processing, or carrier integration is
-  included in this stage.
+  phone number. An eligible, unexpired sandbox payment can be continued from the
+  lookup page; it rechecks the order and contact before returning the existing
+  gateway link. There are no customer accounts or all-orders-by-contact listing.
+- Online sandbox orders reserve stock for the configured deadline and remain
+  pending review after verified payment. Their items and totals cannot be edited.
+  Customers may place another order while an earlier payment is pending; each
+  order reserves its own stock and can still complete independently. Cart items
+  remain while unpaid. After payment, only unchanged matching cart snapshots are
+  removed; browsers without safe cross-tab locking retain the cart. Gateway session
+  reuse after a failed or cancelled payment must be verified with SSLCOMMERZ.
+  Expired reservations are released, while validated late payments and rejected
+  paid orders require manual refund review. Administrators record completed full
+  refunds performed outside the app; the app does not send refunds. Risk-flagged
+  payments require administrator review. Monitor payment expiry/reconciliation
+  error logs and refund-required orders; keep the API running to process them.
+  Extra validated charges are listed separately for manual refund. Unpaid and
+  expired attempts continue to be reconciled; verified payments are additionally
+  queried for seven days to detect extra charges. Provider callbacks remain active
+  afterward, so monitor the provider account as well.
+- `backend/openapi.yaml` documents checkout and admin endpoints. No customer
+  accounts, live payment processing, or carrier integration is included.
 
 ## Verification
 

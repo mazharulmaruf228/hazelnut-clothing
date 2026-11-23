@@ -3,9 +3,10 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { randomUUID } from "node:crypto";
 import { apiRouter } from "./routes/index.ts";
-import { apiLimit } from "./middleware/rate-limit.middleware.ts";
+import { apiLimit, paymentCallbackLimit } from "./middleware/rate-limit.middleware.ts";
 import { errorHandler } from "./middleware/error.middleware.ts";
 import { healthRouter } from "./routes/health.routes.ts";
+import { paymentCallbackRouter } from "./routes/payment.routes.ts";
 
 export const app = express();
 app.disable("x-powered-by");
@@ -18,6 +19,7 @@ app.use((_req, res, next) => {
   next();
 });
 app.use("/api", healthRouter);
+app.use("/api/payments", paymentCallbackLimit, paymentCallbackRouter);
 app.use("/api", apiLimit, apiRouter);
 app.use((_req, res) => res.status(404).json({ error: { message: "Not found", requestId: res.locals.requestId } }));
 app.use(errorHandler);

@@ -5,6 +5,7 @@ const url = process.env.TEST_DATABASE_URL || "postgresql://catalogue:change-me@1
 if (!new URL(url).pathname.endsWith("_test")) throw new Error("Browser fixtures require a database ending in _test");
 process.env.DATABASE_URL = url;
 process.env.NODE_ENV = "test";
+process.env.PAYMENT_MODE = "offline";
 const migrated = spawnSync(process.platform === "win32" ? "npx.cmd" : "npx", ["prisma", "migrate", "deploy"], { stdio: "inherit", env: process.env, shell: process.platform === "win32" });
 if (migrated.status !== 0) process.exit(migrated.status || 1);
 const { db } = await import("../src/config/database.ts");

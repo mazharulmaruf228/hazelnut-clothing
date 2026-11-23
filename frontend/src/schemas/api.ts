@@ -103,9 +103,44 @@ export const orderSchema = z.object({
   items: z.array(orderItemSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
+  payment: z
+    .object({
+      status: z.enum(["INITIATING", "PENDING", "PAID", "RISK_REVIEW", "EXPIRED", "REFUND_REQUIRED", "REFUNDED"]),
+      expiresAt: z.string(),
+      paidAt: z.string().nullable(),
+      bankTransactionId: z.string().nullable(),
+      refundAmount: z.string().nullable(),
+      refundReference: z.string().nullable(),
+      refundNote: z.string().nullable(),
+      refundedBy: z.string().nullable(),
+      refundedAt: z.string().nullable(),
+      duplicateCharges: z.array(
+        z.object({
+          id: z.string(),
+          bankTransactionId: z.string().nullable(),
+          refundReference: z.string().nullable(),
+          refundNote: z.string().nullable(),
+          refundedBy: z.string().nullable(),
+          refundedAt: z.string().nullable(),
+        }),
+      ),
+    })
+    .nullable()
+    .optional(),
 });
 
 export type Order = z.infer<typeof orderSchema>;
+export const guestOrderSchema = orderSchema.omit({ payment: true }).extend({
+  payment: z
+    .object({
+      status: z.enum(["INITIATING", "PENDING", "PAID", "RISK_REVIEW", "EXPIRED", "REFUND_REQUIRED", "REFUNDED"]),
+      expiresAt: z.string(),
+      canContinue: z.boolean(),
+    })
+    .nullable()
+    .optional(),
+});
+export type GuestOrder = z.infer<typeof guestOrderSchema>;
 export const orderReceiptSchema = z.object({
   id: z.string(),
   status: z.enum(["PENDING_REVIEW", "CONFIRMED", "REJECTED"]),

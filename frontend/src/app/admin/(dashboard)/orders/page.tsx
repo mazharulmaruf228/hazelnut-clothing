@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useChangeMutation, useOrdersQuery, useProductsQuery } from "@/store/api";
+import { useChangeMutation, useMeQuery, useOrdersQuery, useProductsQuery } from "@/store/api";
 import { Button } from "@/components/ui/button";
 import { Confirm } from "@/components/ui/confirm";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -16,6 +16,46 @@ import { useDeliveryOptions } from "@/lib/delivery";
 
 type OrderLineInput = { variantId: string; quantity: string };
 type OrderContact = Pick<Order, "customerName" | "email" | "phone" | "deliveryAddress" | "deliveryArea" | "district" | "postcode" | "customerNote">;
+
+function RefundRecorder({ order, chargeId, close }: { order: Order; chargeId?: string; close: () => void }) {
+  const [change, { isLoading }] = useChangeMutation();
+  const [error, setError] = useState("");
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      const path = chargeId ? `/admin/orders/${order.id}/payment/duplicate/${chargeId}/refund` : `/admin/orders/${order.id}/payment/refund`;
+      await change({ url: path, method: "POST", body: { amount: order.total, reference: form.get("reference"), note: form.get("note") } }).unwrap();
+      close();
+    } catch (refundError) {
+      setError(errorMessage(refundError));
+    }
+  }
+  return (
+    <Dialog open onOpenChange={(open) => !open && close()}>
+      <DialogContent>
+        <DialogTitle>Record completed refund</DialogTitle>
+        <DialogDescription>Record a full refund already completed outside the app: {money(order.total)}.</DialogDescription>
+        <form className="mt-5 grid gap-4" onSubmit={submit}>
+          <Label>
+            Refund reference
+            <Input name="reference" required maxLength={100} />
+          </Label>
+          <Label>
+            Note
+            <Textarea name="note" required maxLength={500} />
+          </Label>
+          {error && (
+            <p role="alert" className="text-xs text-[#873723]">
+              {error}
+            </p>
+          )}
+          <Button disabled={isLoading}>Record refund</Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function OrderEditor({ order, close }: { order: Order; close: () => void }) {
   const { data: productData, isLoading: productsLoading } = useProductsQuery("status=PUBLISHED&page=1&pageSize=100");
@@ -211,13 +251,23 @@ function OrderEditor({ order, close }: { order: Order; close: () => void }) {
 
 export default function OrdersPage() {
   const { data, isFetching, error, refetch } = useOrdersQuery();
+  const { data: session } = useMeQuery();
   const [change, { isLoading }] = useChangeMutation();
   const [actionError, setActionError] = useState("");
   const [editingOrder, setEditingOrder] = useState<Order>();
+  const [refundTarget, setRefundTarget] = useState<{ order: Order; chargeId?: string }>();
   async function review(id: string, status: "CONFIRMED" | "REJECTED") {
     setActionError("");
     try {
       await change({ url: `/admin/orders/${id}/status`, method: "PATCH", body: { status } }).unwrap();
+    } catch (reviewError) {
+      setActionError(errorMessage(reviewError));
+    }
+  }
+  async function reviewRisk(id: string, decision: "APPROVE" | "REJECT") {
+    setActionError("");
+    try {
+      await change({ url: `/admin/orders/${id}/payment/risk-review`, method: "POST", body: { decision } }).unwrap();
     } catch (reviewError) {
       setActionError(errorMessage(reviewError));
     }
@@ -250,6 +300,7 @@ export default function OrdersPage() {
               <TableHead>Delivery charge</TableHead>
               <TableHead>Grand total</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Payment</TableHead>
               <TableHead>Review</TableHead>
             </TableRow>
           </TableHeader>
@@ -292,21 +343,61 @@ export default function OrdersPage() {
                     {order.status.replaceAll("_", " ")}
                   </span>
                 </TableCell>
+                <TableCell className="min-w-37.5">
+                  {order.payment ? (
+                    <>
+                      <span>{order.payment.status.replaceAll("_", " ")}</span>
+                      {order.payment.bankTransactionId && <small className="mt-1 block break-all text-[10px] text-muted">Bank: {order.payment.bankTransactionId}</small>}
+                      {order.payment.refundReference && <small className="mt-1 block break-all text-[10px] text-muted">Refund: {order.payment.refundReference}</small>}
+                      {session?.user.role === "ADMIN" && order.payment.status === "REFUND_REQUIRED" && (
+                        <Button variant="outline" size="sm" onClick={() => setRefundTarget({ order })}>
+                          Record refund
+                        </Button>
+                      )}
+                      {order.payment.duplicateCharges.map((charge) => (
+                        <div className="mt-2 border-t border-line pt-2" key={charge.id}>
+                          <small className="block text-[10px] text-muted">Extra charge: {charge.refundedAt ? "refund recorded" : "refund required"}</small>
+                          {charge.bankTransactionId && <small className="block break-all text-[10px] text-muted">Bank: {charge.bankTransactionId}</small>}
+                          {charge.refundReference && <small className="block break-all text-[10px] text-muted">Refund: {charge.refundReference}</small>}
+                          {session?.user.role === "ADMIN" && !charge.refundedAt && (
+                            <Button variant="outline" size="sm" onClick={() => setRefundTarget({ order, chargeId: charge.id })}>
+                              Record extra refund
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      {session?.user.role === "ADMIN" && order.payment.status === "RISK_REVIEW" && (
+                        <div className="mt-2 flex gap-1">
+                          <Button variant="outline" size="sm" disabled={isLoading} onClick={() => void reviewRisk(order.id, "APPROVE")}>
+                            Approve
+                          </Button>
+                          <Button variant="outline" size="sm" disabled={isLoading} onClick={() => void reviewRisk(order.id, "REJECT")}>
+                            Reject
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    "Offline"
+                  )}
+                </TableCell>
                 <TableCell>
                   {order.status === "PENDING_REVIEW" ? (
                     <div className="flex items-center gap-[3px] whitespace-nowrap">
-                      <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Edit order" aria-label={`Edit order for ${order.customerName}`} onClick={() => setEditingOrder(order)}>
-                        <Pencil size={15} />
-                      </Button>
-                      <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Confirm order and consume reserved stock" aria-label="Confirm order" disabled={isLoading} onClick={() => void review(order.id, "CONFIRMED")}>
+                      {!order.payment && (
+                        <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Edit order" aria-label={`Edit order for ${order.customerName}`} onClick={() => setEditingOrder(order)}>
+                          <Pencil size={15} />
+                        </Button>
+                      )}
+                      <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Confirm order and consume reserved stock" aria-label="Confirm order" disabled={isLoading || Boolean(order.payment && order.payment.status !== "PAID")} onClick={() => void review(order.id, "CONFIRMED")}>
                         <Check size={16} />
                       </Button>
                       <Confirm
                         title="Reject order?"
-                        description="Rejecting this order releases its reserved stock."
+                        description={order.payment ? "Rejecting this paid order releases its reserved stock and requires an external refund." : "Rejecting this order releases its reserved stock."}
                         onConfirm={() => review(order.id, "REJECTED")}
                         trigger={
-                          <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Reject order" aria-label="Reject order" disabled={isLoading}>
+                          <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Reject order" aria-label="Reject order" disabled={isLoading || Boolean(order.payment && order.payment.status !== "PAID")}>
                             <X size={16} />
                           </Button>
                         }
@@ -323,6 +414,7 @@ export default function OrdersPage() {
       </TableContainer>
       {!data?.items.length && !isFetching && <div className="px-5 py-20 text-center">No orders yet.</div>}
       {editingOrder && <OrderEditor key={editingOrder.id} order={editingOrder} close={() => setEditingOrder(undefined)} />}
+      {refundTarget && <RefundRecorder key={refundTarget.chargeId ?? refundTarget.order.id} order={refundTarget.order} chargeId={refundTarget.chargeId} close={() => setRefundTarget(undefined)} />}
     </>
   );
 }

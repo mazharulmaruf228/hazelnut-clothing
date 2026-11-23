@@ -1,0 +1,1 @@
+ALTER TABLE "Payment" ADD COLUMN "initiationStartedAt" TIMESTAMP(3);

@@ -48,6 +48,7 @@ Set environment variables from `.env.example` in a local `.env`. Default
 development API port is 4000. `/api/health` is liveness; `/api/ready` checks
 PostgreSQL. Database-backed workflows need a running PostgreSQL instance.
 
-The current tests check pure pricing/validation, HTTP perimeter and architecture
-without a database. Real database/provider integration tests remain a subsequent
-implementation step; passing these tests alone is not production certification.
+Run `npm run test:integration` against the dedicated `_test` PostgreSQL database
+for database-backed order and payment tests. Provider calls are mocked; a real
+SSLCOMMERZ sandbox account and public HTTPS callback are required for hosted
+checkout verification. See the root README for sandbox configuration and safety.

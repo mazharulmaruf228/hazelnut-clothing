@@ -97,6 +97,7 @@ test("guest checkout reserves stock for admin review", async ({ page }) => {
   await page.getByRole("link", { name: "Cart, 1 item" }).click();
   await expect(page.getByRole("heading", { name: "Shopping bag" })).toBeVisible();
   await page.getByRole("link", { name: "Continue to checkout" }).click();
+  await page.evaluate((key) => sessionStorage.setItem("hazelnut-payment-checkout", JSON.stringify({ key, fingerprint: "previous", items: [{ variantId: "previous", quantity: 1 }], settled: false })), randomUUID());
   await page.getByLabel("Name", { exact: true }).fill(customerName);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Phone", { exact: true }).fill("+8801700000000");
@@ -105,6 +106,7 @@ test("guest checkout reserves stock for admin review", async ({ page }) => {
   await page.getByLabel("House / road", { exact: true }).fill("12 Example Road, Dhaka");
   await page.getByRole("button", { name: "Place order for review" }).click();
   await expect(page.getByRole("heading", { name: "Thank you." })).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("hazelnut-payment-checkout") || "null").settled)).toBe(false);
 
   await login(page);
   await page.getByRole("link", { name: "Orders", exact: true }).click();
@@ -126,6 +128,113 @@ test("guest checkout reserves stock for admin review", async ({ page }) => {
   await orderRow.getByRole("button", { name: "Confirm order" }).click();
   await expect(orderRow).toContainText("CONFIRMED");
 });
+test("sandbox checkout supports independent pending orders without removing later cart edits", async ({ page }) => {
+  const orders = new Map<string, { id: string; paymentStatus: string }>();
+  await page.route("**/api/orders/payment-mode", (route) => route.fulfill({ json: { mode: "sslcommerz_sandbox" } }));
+  await page.route("**/api/orders/payment-status", (route) => {
+    const order = orders.get(route.request().postDataJSON().key);
+    return order ? route.fulfill({ json: { id: order.id, status: "PENDING_REVIEW", subtotal: "1800.00", deliveryCharge: "80.00", total: "1880.00", paymentStatus: order.paymentStatus, gatewayUrl: null } }) : route.fulfill({ status: 404 });
+  });
+  await page.route("**/api/orders", (route) => {
+    const key = route.request().headers()["idempotency-key"];
+    const order = orders.get(key) ?? { id: randomUUID(), paymentStatus: "PENDING" };
+    orders.set(key, order);
+    return route.fulfill({ status: 201, json: { id: order.id, status: "PENDING_REVIEW", subtotal: "1800.00", deliveryCharge: "80.00", total: "1880.00", paymentStatus: "INITIATING", gatewayUrl: null } });
+  });
+  await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("hazelnut-cart", JSON.stringify([{ variantId: "variant", productId: "product", slug: "shirt", productName: "Test shirt", variantName: "Medium", sku: "TEST", unitPrice: "900.00", imageUrl: "", quantity: 2 }])));
+  await page.goto("/checkout");
+  await page.getByLabel("Name", { exact: true }).fill("Guest Customer");
+  await page.getByLabel("Email", { exact: true }).fill("guest@example.com");
+  await page.getByLabel("Phone", { exact: true }).fill("+8801700000000");
+  await page.getByRole("combobox", { name: "District", exact: true }).selectOption("Dhaka");
+  await page.getByLabel("Postcode", { exact: true }).fill("1207");
+  await page.getByLabel("House / road", { exact: true }).fill("12 Example Road");
+  await page.getByRole("button", { name: "Continue to sandbox payment" }).click();
+  await expect(page.getByText("Payment confirmation is pending.")).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("hazelnut-cart") || "[]")[0].quantity)).toBe(2);
+  await page.goto("/checkout");
+  await page.getByLabel("Name", { exact: true }).fill("Guest Customer");
+  await page.getByLabel("Email", { exact: true }).fill("guest@example.com");
+  await page.getByLabel("Phone", { exact: true }).fill("+8801700000000");
+  await page.getByRole("combobox", { name: "District", exact: true }).selectOption("Dhaka");
+  await page.getByLabel("Postcode", { exact: true }).fill("1207");
+  await page.getByLabel("House / road", { exact: true }).fill("12 Example Road");
+  await page.getByRole("button", { name: "Continue to sandbox payment" }).click();
+  await expect(page.getByText("Payment confirmation is pending.")).toBeVisible();
+  expect(orders.size).toBe(2);
+  const [first, second] = [...orders.values()];
+  expect(first.id).not.toBe(second.id);
+  await page.evaluate(() => {
+    const cart = JSON.parse(localStorage.getItem("hazelnut-cart") || "[]");
+    cart[0].quantity = 3;
+    localStorage.setItem("hazelnut-cart", JSON.stringify(cart));
+  });
+  first.paymentStatus = "PAID";
+  await page.goto(`/payment-return?order=${first.id}`);
+  await expect(page.getByText("Payment verified. Your order is pending review.")).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("hazelnut-cart") || "[]")[0].quantity)).toBe(3);
+  second.paymentStatus = "PAID";
+  await page.goto(`/payment-return?order=${second.id}`);
+  await expect(page.getByText("Payment verified. Your order is pending review.")).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("hazelnut-cart") || "[]")[0].quantity)).toBe(3);
+  await page.reload();
+  await expect(page.getByText("Payment verified. Your order is pending review.")).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("hazelnut-cart") || "[]")[0].quantity)).toBe(3);
+});
+
+test("guest order lookup can resume an eligible sandbox payment", async ({ page }) => {
+  const orderId = randomUUID();
+  let expired = true;
+  let canContinue = false;
+  await page.route("**/api/orders/lookup", (route) =>
+    route.fulfill({
+      json: {
+        id: orderId,
+        status: "PENDING_REVIEW",
+        customerName: "Guest",
+        email: "guest@example.com",
+        phone: "01700000000",
+        deliveryAddress: "12 Example Road",
+        deliveryArea: "",
+        district: "Dhaka",
+        postcode: "1200",
+        customerNote: "",
+        subtotal: "900.00",
+        deliveryCharge: "80.00",
+        total: "980.00",
+        items: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        payment: { status: canContinue ? "PENDING" : "EXPIRED", expiresAt: new Date(Date.now() + 60_000).toISOString(), canContinue },
+      },
+    }),
+  );
+  await page.route("**/api/orders/resume-payment", (route) =>
+    expired ? route.fulfill({ status: 409, json: { error: { message: "Payment cannot be continued for this order" } } }) : route.fulfill({ json: { orderId, gatewayUrl: "https://sandbox.sslcommerz.com/gwprocess/v4/gw.php?session=test", statusToken: "scoped-token" } }),
+  );
+  await page.route("**/api/orders/guest-payment-status", (route) => route.fulfill({ json: { id: orderId, status: "PENDING_REVIEW", subtotal: "900.00", deliveryCharge: "80.00", total: "980.00", paymentStatus: "PENDING", gatewayUrl: null } }));
+  await page.route("https://sandbox.sslcommerz.com/**", (route) => route.fulfill({ contentType: "text/html", body: "Sandbox checkout" }));
+  await page.goto("/order-history");
+  await page.getByLabel("Order number").fill(orderId);
+  await page.getByRole("textbox", { name: "Email address", exact: true }).fill("guest@example.com");
+  await page.getByRole("button", { name: "Find order" }).click();
+  await expect(page.getByText("Payment: EXPIRED")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue sandbox payment" })).toHaveCount(0);
+  canContinue = true;
+  await page.getByRole("button", { name: "Find order" }).click();
+  await expect(page.getByText("Payment: PENDING")).toBeVisible();
+  await page.getByRole("button", { name: "Continue sandbox payment" }).click();
+  await expect(page.getByText("Payment cannot be continued for this order", { exact: true })).toBeVisible();
+  expired = false;
+  await page.getByRole("button", { name: "Continue sandbox payment" }).click();
+  await expect(page).toHaveURL(/sandbox\.sslcommerz\.com/);
+  await page.goto(`/payment-return?order=${orderId}`);
+  await expect(page.getByText("Payment confirmation is pending.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Payment confirmation is pending.")).toBeVisible();
+});
+
 test("featured carousel respects reduced motion and supports keyboard navigation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
