@@ -1,19 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { orderSchema, type Order } from "@/schemas/api";
+import { guestOrderSchema, type GuestOrder } from "@/schemas/api";
+import { saveGuestPaymentAccess } from "@/lib/payment-checkout";
 import { errorMessage, money } from "@/lib/utils";
 
 export default function OrderHistoryPage() {
   const [orderNumber, setOrderNumber] = useState("");
   const [contactType, setContactType] = useState<"email" | "phone">("email");
   const [contact, setContact] = useState("");
-  const [order, setOrder] = useState<Order>();
+  const [order, setOrder] = useState<GuestOrder>();
+  const [verifiedContact, setVerifiedContact] = useState<{ orderNumber: string; email?: string; phone?: string }>();
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [resuming, setResuming] = useState(false);
 
   async function lookup(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -21,24 +25,43 @@ export default function OrderHistoryPage() {
     setSubmitting(true);
     setError("");
     setOrder(undefined);
+    setVerifiedContact(undefined);
     try {
+      const lookupInput = { orderNumber: orderNumber.trim(), [contactType]: contact.trim() };
       const response = await fetch("/api/orders/lookup", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          orderNumber: orderNumber.trim(),
-          [contactType]: contact.trim(),
-        }),
+        body: JSON.stringify(lookupInput),
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(errorMessage({ data: body }));
-      const parsed = orderSchema.safeParse(body);
+      const parsed = guestOrderSchema.safeParse(body);
       if (!parsed.success) throw new Error("The order lookup returned invalid details.");
       setOrder(parsed.data);
+      setVerifiedContact(lookupInput);
     } catch (lookupError) {
       setError(lookupError instanceof Error ? lookupError.message : "Unable to look up this order.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function resumePayment() {
+    if (!verifiedContact || !order || resuming) return;
+    setResuming(true);
+    setError("");
+    try {
+      const response = await fetch("/api/orders/resume-payment", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(verifiedContact) });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(errorMessage({ data: body }));
+      const result = z.object({ orderId: z.uuid(), gatewayUrl: z.url(), statusToken: z.string().min(1) }).parse(body);
+      const gateway = new URL(result.gatewayUrl);
+      if (result.orderId !== order.id || gateway.origin !== "https://sandbox.sslcommerz.com" || gateway.username || gateway.password) throw new Error("Invalid payment destination.");
+      saveGuestPaymentAccess(result.orderId, result.statusToken);
+      window.location.assign(gateway.href);
+    } catch (resumeError) {
+      setError(resumeError instanceof Error ? resumeError.message : "Unable to continue payment.");
+      setResuming(false);
     }
   }
 
@@ -65,7 +88,11 @@ export default function OrderHistoryPage() {
           {contactType === "email" ? "Email address" : "Phone number"}
           <Input type={contactType === "email" ? "email" : "tel"} value={contact} onChange={(event) => setContact(event.target.value)} required maxLength={254} autoComplete={contactType === "email" ? "email" : "tel"} />
         </Label>
-        {error && <p role="alert" className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">{error}</p>}
+        {error && (
+          <p role="alert" className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">
+            {error}
+          </p>
+        )}
         <Button disabled={submitting}>{submitting ? "Looking up order..." : "Find order"}</Button>
       </form>
       {order && (
@@ -73,23 +100,50 @@ export default function OrderHistoryPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 className="font-sans text-lg">Order {order.id}</h2>
-              <p className="mt-1 text-xs text-muted">{new Date(order.createdAt).toLocaleString()} · {order.status.replaceAll("_", " ")}</p>
+              <p className="mt-1 text-xs text-muted">
+                {new Date(order.createdAt).toLocaleString()} · {order.status.replaceAll("_", " ")}
+              </p>
             </div>
-            <span className="text-xs">Delivery to: {order.district ?? (order.deliveryArea || "District not set")}{order.postcode ? ` · ${order.postcode}` : ""}</span>
+            <span className="text-xs">
+              Delivery to: {order.district ?? (order.deliveryArea || "District not set")}
+              {order.postcode ? ` · ${order.postcode}` : ""}
+            </span>
           </div>
           <p className="text-sm text-muted">{order.deliveryAddress}</p>
+          {order.payment && (
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <span>Payment: {order.payment.status.replaceAll("_", " ")}</span>
+              {order.payment.canContinue && <span className="text-muted">Reserved until {new Date(order.payment.expiresAt).toLocaleString()}</span>}
+              {order.payment.canContinue && (
+                <Button type="button" variant="outline" disabled={resuming} onClick={() => void resumePayment()}>
+                  {resuming ? "Opening payment..." : "Continue sandbox payment"}
+                </Button>
+              )}
+            </div>
+          )}
           <div className="grid gap-3">
             {order.items.map((item) => (
               <div className="flex justify-between gap-4 text-sm" key={item.id}>
-                <span>{item.quantity} × {item.productName} · {item.variantName}</span>
+                <span>
+                  {item.quantity} × {item.productName} · {item.variantName}
+                </span>
                 <strong>{money(item.lineTotal)}</strong>
               </div>
             ))}
           </div>
           <div className="ml-auto grid w-full max-w-[320px] gap-3 border-t border-line pt-4 text-sm">
-            <div className="flex justify-between gap-4"><span>Item subtotal</span><strong>{money(order.subtotal)}</strong></div>
-            <div className="flex justify-between gap-4"><span>Delivery charge</span><strong>{money(order.deliveryCharge)}</strong></div>
-            <div className="flex justify-between gap-4 border-t border-line pt-3"><span>Grand total</span><strong>{money(order.total)}</strong></div>
+            <div className="flex justify-between gap-4">
+              <span>Item subtotal</span>
+              <strong>{money(order.subtotal)}</strong>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Delivery charge</span>
+              <strong>{money(order.deliveryCharge)}</strong>
+            </div>
+            <div className="flex justify-between gap-4 border-t border-line pt-3">
+              <span>Grand total</span>
+              <strong>{money(order.total)}</strong>
+            </div>
           </div>
         </section>
       )}

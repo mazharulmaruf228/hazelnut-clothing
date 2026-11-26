@@ -48,6 +48,14 @@ Set environment variables from `.env.example` in a local `.env`. Default
 development API port is 4000. `/api/health` is liveness; `/api/ready` checks
 PostgreSQL. Database-backed workflows need a running PostgreSQL instance.
 
-The current tests check pure pricing/validation, HTTP perimeter and architecture
-without a database. Real database/provider integration tests remain a subsequent
-implementation step; passing these tests alone is not production certification.
+For a separate frontend, add its exact origin to `ADDITIONAL_ALLOWED_ORIGINS` in
+`.env` (for example `http://localhost:4200`); separate multiple origins with
+commas and restart the API. `PUBLIC_ORIGIN` remains allowed and controls redirects.
+For login, send credentials, obtain a token from `GET /api/auth/csrf`, and send
+it in `X-CSRF-Token`. The session cookies use `SameSite=Lax`, so cross-site
+deployments may require a same-site proxy; allowing CORS alone is not sufficient.
+
+Run `npm run test:integration` against the dedicated `_test` PostgreSQL database
+for database-backed order and payment tests. Provider calls are mocked; a real
+SSLCOMMERZ sandbox account and public HTTPS callback are required for hosted
+checkout verification. See the root README for sandbox configuration and safety.

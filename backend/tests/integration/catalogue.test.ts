@@ -7,6 +7,9 @@ import jwt from "jsonwebtoken";
 import { OAuth2Client } from "google-auth-library";
 import { destroyAsset } from "../../src/integrations/cloudinary.ts";
 import { processAssetDeletions } from "../../src/services/asset-cleanup.service.ts";
+import { createOrder } from "../../src/services/order.service.ts";
+import { createSandboxOrder, expirePaymentReservations, reconcilePayments, validatePayment } from "../../src/services/payment.service.ts";
+import * as sslcommerz from "../../src/integrations/sslcommerz.ts";
 import { app } from "../../src/app.ts";
 import { db } from "../../src/config/database.ts";
 import { config } from "../../src/config/env.ts";
@@ -316,16 +319,18 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
         customerNote: "",
         subtotal: "900.00",
         items: {
-          create: [{
-            productId,
-            variantId: defaultId,
-            productName: "Test Shirt",
-            variantName: "Medium",
-            sku: "TEST-M",
-            quantity: 1,
-            unitPrice: "900.00",
-            lineTotal: "900.00",
-          }],
+          create: [
+            {
+              productId,
+              variantId: defaultId,
+              productName: "Test Shirt",
+              variantName: "Medium",
+              sku: "TEST-M",
+              quantity: 1,
+              unitPrice: "900.00",
+              lineTotal: "900.00",
+            },
+          ],
         },
       },
     });
@@ -346,15 +351,259 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
     const unchangedLegacy = await admin.patch(`/api/admin/orders/${legacy.id}`).set(adminHeaders).send(legacyEdit);
     expect(unchangedLegacy.status).toBe(200);
     expect(unchangedLegacy.body).toMatchObject({ deliveryArea: "Old free-form area", district: null, postcode: null, deliveryCharge: "0.00", total: "900.00" });
-    const explicitlyPricedLegacy = await admin.patch(`/api/admin/orders/${legacy.id}`).set(adminHeaders).send({
-      ...legacyEdit,
-      district: "Dhaka",
-      postcode: "1200",
-      updatedAt: unchangedLegacy.body.updatedAt,
-    });
+    const explicitlyPricedLegacy = await admin
+      .patch(`/api/admin/orders/${legacy.id}`)
+      .set(adminHeaders)
+      .send({
+        ...legacyEdit,
+        district: "Dhaka",
+        postcode: "1200",
+        updatedAt: unchangedLegacy.body.updatedAt,
+      });
     expect(explicitlyPricedLegacy.status).toBe(200);
     expect(explicitlyPricedLegacy.body).toMatchObject({ deliveryArea: "Old free-form area", district: "Dhaka", deliveryCharge: "80.00", total: "980.00" });
     expect((await admin.get("/api/admin/orders")).body.items).toHaveLength(4);
+  });
+  it("reserves online orders once and prevents unpaid review or editing", async () => {
+    const variant = await db.productVariant.create({ data: { productId, name: "Payment test", sku: "PAYMENT-TEST", attributes: { size: "PAYMENT" }, stockOnHand: 2 } });
+    const details = {
+      customerName: "Guest Customer",
+      email: "guest@test.invalid",
+      phone: "+8801700000000",
+      deliveryAddress: "12 Example Road, Dhaka",
+      district: "Dhaka" as const,
+      postcode: "1200",
+      customerNote: "",
+      items: [{ variantId: variant.id, quantity: 1 }],
+    };
+    const online = { idempotencyKey: randomUUID(), expiresAt: new Date(Date.now() + 30 * 60_000) };
+    const [first, retry] = await Promise.all([createOrder(details, online), createOrder(details, online)]);
+    expect(retry.id).toBe(first.id);
+    expect((await db.productVariant.findUniqueOrThrow({ where: { id: variant.id } })).stockReserved).toBe(1);
+    await expect(createOrder({ ...details, items: [{ variantId: variant.id, quantity: 2 }] }, online)).rejects.toMatchObject({ status: 409 });
+    expect((await admin.patch(`/api/admin/orders/${first.id}/status`).set(adminHeaders).send({ status: "CONFIRMED" })).status).toBe(409);
+    const order = await db.order.findUniqueOrThrow({ where: { id: first.id } });
+    expect(
+      (
+        await admin
+          .patch(`/api/admin/orders/${first.id}`)
+          .set(adminHeaders)
+          .send({ ...details, deliveryArea: "", updatedAt: order.updatedAt.toISOString() })
+      ).status,
+    ).toBe(409);
+    await db.payment.update({ where: { orderId: first.id }, data: { status: "PAID", paidAt: new Date() } });
+    expect((await admin.patch(`/api/admin/orders/${first.id}/status`).set(adminHeaders).send({ status: "REJECTED" })).status).toBe(200);
+    expect((await db.payment.findUniqueOrThrow({ where: { orderId: first.id } })).status).toBe("REFUND_REQUIRED");
+    expect((await db.productVariant.findUniqueOrThrow({ where: { id: variant.id } })).stockReserved).toBe(0);
+    const guestPayment = (await request(app).post("/api/orders/lookup").send({ orderNumber: first.id, email: details.email })).body.payment;
+    expect(guestPayment).toMatchObject({ status: "REFUND_REQUIRED", canContinue: false });
+    expect(Object.keys(guestPayment).sort()).toEqual(["canContinue", "expiresAt", "status"]);
+    const refund = { amount: first.total, reference: "external-refund-123", note: "Refunded outside the app" };
+    expect((await editor.post(`/api/admin/orders/${first.id}/payment/refund`).set(editorHeaders).send(refund)).status).toBe(403);
+    expect(
+      (
+        await admin
+          .post(`/api/admin/orders/${first.id}/payment/refund`)
+          .set(adminHeaders)
+          .send({ ...refund, amount: "1.00" })
+      ).status,
+    ).toBe(400);
+    expect((await admin.post(`/api/admin/orders/${first.id}/payment/refund`).set(adminHeaders).send(refund)).status).toBe(204);
+    expect((await admin.post(`/api/admin/orders/${first.id}/payment/refund`).set(adminHeaders).send(refund)).status).toBe(409);
+    expect(await db.payment.findUniqueOrThrow({ where: { orderId: first.id } })).toMatchObject({ status: "REFUNDED", refundReference: refund.reference, refundedBy: adminId });
+    await db.payment.update({ where: { orderId: first.id }, data: { nextReconcileAt: new Date(Date.now() + 60 * 60_000) } });
+  });
+  it("expires an online reservation once and flags a late verified payment for refund", async () => {
+    const variant = await db.productVariant.create({ data: { productId, name: "Expiry test", sku: "PAYMENT-EXPIRY", attributes: { size: "EXPIRY" }, stockOnHand: 1 } });
+    const order = await createOrder(
+      {
+        customerName: "Guest Customer",
+        email: "guest@test.invalid",
+        phone: "+8801700000000",
+        deliveryAddress: "12 Example Road, Dhaka",
+        district: "Dhaka",
+        postcode: "1200",
+        customerNote: "",
+        items: [{ variantId: variant.id, quantity: 1 }],
+      },
+      { idempotencyKey: randomUUID(), expiresAt: new Date(Date.now() - 1_000) },
+    );
+    const payment = await db.payment.findUniqueOrThrow({ where: { orderId: order.id } });
+    await Promise.all([expirePaymentReservations(), expirePaymentReservations()]);
+    expect(await db.productVariant.findUniqueOrThrow({ where: { id: variant.id } })).toMatchObject({ stockReserved: 0, stockOnHand: 1 });
+    expect((await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe("EXPIRED");
+    const validate = vi.spyOn(sslcommerz, "validateSandboxPayment").mockResolvedValue({ status: "VALID", tran_id: payment.transactionId, val_id: "late-validation", currency_type: "BDT", currency_amount: order.total, risk_level: "0" });
+    const query = vi.spyOn(sslcommerz, "querySandboxTransaction").mockResolvedValue({ APIConnect: "DONE", element: [{ status: "VALID", val_id: "late-validation" }] });
+    try {
+      await Promise.all([reconcilePayments(), reconcilePayments()]);
+      expect(query).toHaveBeenCalledTimes(1);
+      await validatePayment("late-validation");
+      expect((await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe("REFUND_REQUIRED");
+      expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("REJECTED");
+      expect((await db.productVariant.findUniqueOrThrow({ where: { id: variant.id } })).stockReserved).toBe(0);
+    } finally {
+      validate.mockRestore();
+      query.mockRestore();
+    }
+  });
+  it("only accepts matching provider-validated callbacks and consumes paid stock once", async () => {
+    const variant = await db.productVariant.create({ data: { productId, name: "Callback test", sku: "PAYMENT-CALLBACK", attributes: { size: "CALLBACK" }, stockOnHand: 1 } });
+    const order = await createOrder(
+      {
+        customerName: "Guest Customer",
+        email: "guest@test.invalid",
+        phone: "+8801700000000",
+        deliveryAddress: "12 Example Road, Dhaka",
+        district: "Dhaka",
+        postcode: "1200",
+        customerNote: "",
+        items: [{ variantId: variant.id, quantity: 1 }],
+      },
+      { idempotencyKey: randomUUID(), expiresAt: new Date(Date.now() + 30 * 60_000) },
+    );
+    const payment = await db.payment.findUniqueOrThrow({ where: { orderId: order.id } });
+    const validation = { status: "VALID", tran_id: payment.transactionId, val_id: "callback-validation", currency_type: "BDT", currency_amount: order.total, risk_level: "0" };
+    const validate = vi
+      .spyOn(sslcommerz, "validateSandboxPayment")
+      .mockResolvedValueOnce({ ...validation, currency_amount: "1.00" })
+      .mockResolvedValue(validation);
+    try {
+      expect((await request(app).post("/api/payments/ipn").type("form").send({ val_id: validation.val_id, status: "VALID" })).status).toBe(400);
+      expect((await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe("INITIATING");
+      const callbacks = await Promise.all([0, 1].map(() => request(app).post("/api/payments/ipn").type("form").send({ val_id: validation.val_id })));
+      expect(callbacks.map((response) => response.status)).toEqual([200, 200]);
+      expect((await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe("PAID");
+      expect((await admin.patch(`/api/admin/orders/${order.id}/status`).set(adminHeaders).send({ status: "CONFIRMED" })).status).toBe(200);
+      expect((await admin.patch(`/api/admin/orders/${order.id}/status`).set(adminHeaders).send({ status: "CONFIRMED" })).status).toBe(200);
+      expect(await db.productVariant.findUniqueOrThrow({ where: { id: variant.id } })).toMatchObject({ stockReserved: 0, stockOnHand: 0 });
+      validate.mockResolvedValue({ ...validation, val_id: "extra-validation", bank_tran_id: "extra-bank-transaction" });
+      expect((await request(app).post("/api/payments/ipn").type("form").send({ val_id: "extra-validation" })).status).toBe(200);
+      expect((await request(app).post("/api/payments/ipn").type("form").send({ val_id: "extra-validation" })).status).toBe(200);
+      const charges = await db.duplicatePaymentCharge.findMany({ where: { paymentId: payment.id } });
+      expect(charges).toHaveLength(1);
+      expect((await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe("PAID");
+      const refund = { amount: order.total, reference: "duplicate-refund", note: "Refunded extra charge" };
+      expect((await editor.post(`/api/admin/orders/${order.id}/payment/duplicate/${charges[0].id}/refund`).set(editorHeaders).send(refund)).status).toBe(403);
+      expect((await admin.post(`/api/admin/orders/${order.id}/payment/duplicate/${charges[0].id}/refund`).set(adminHeaders).send(refund)).status).toBe(204);
+      expect((await admin.post(`/api/admin/orders/${order.id}/payment/duplicate/${charges[0].id}/refund`).set(adminHeaders).send(refund)).status).toBe(409);
+    } finally {
+      validate.mockRestore();
+    }
+  });
+  it("holds risky payments for administrator review", async () => {
+    const variant = await db.productVariant.create({ data: { productId, name: "Risk test", sku: "PAYMENT-RISK", attributes: { size: "RISK" }, stockOnHand: 1 } });
+    const order = await createOrder(
+      {
+        customerName: "Guest Customer",
+        email: "guest@test.invalid",
+        phone: "+8801700000000",
+        deliveryAddress: "12 Example Road",
+        district: "Dhaka",
+        postcode: "1200",
+        customerNote: "",
+        items: [{ variantId: variant.id, quantity: 1 }],
+      },
+      { idempotencyKey: randomUUID(), expiresAt: new Date(Date.now() + 30 * 60_000) },
+    );
+    const payment = await db.payment.findUniqueOrThrow({ where: { orderId: order.id } });
+    const validate = vi.spyOn(sslcommerz, "validateSandboxPayment").mockResolvedValue({ status: "VALID", tran_id: payment.transactionId, val_id: "risk-validation", currency_type: "BDT", currency_amount: order.total, risk_level: "1" });
+    try {
+      expect((await request(app).post("/api/payments/ipn").type("form").send({ val_id: "risk-validation" })).status).toBe(200);
+      expect((await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe("RISK_REVIEW");
+      expect((await admin.patch(`/api/admin/orders/${order.id}/status`).set(adminHeaders).send({ status: "CONFIRMED" })).status).toBe(409);
+      expect((await editor.post(`/api/admin/orders/${order.id}/payment/risk-review`).set(editorHeaders).send({ decision: "APPROVE" })).status).toBe(403);
+      expect((await admin.post(`/api/admin/orders/${order.id}/payment/risk-review`).set(adminHeaders).send({ decision: "REJECT" })).status).toBe(204);
+      expect((await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe("REFUND_REQUIRED");
+      expect(await db.productVariant.findUniqueOrThrow({ where: { id: variant.id } })).toMatchObject({ stockReserved: 0, stockOnHand: 1 });
+    } finally {
+      validate.mockRestore();
+    }
+  });
+  it("initiates only one session for concurrent retries and does not retry an uncertain request", async () => {
+    const variant = await db.productVariant.create({ data: { productId, name: "Session test", sku: "PAYMENT-SESSION", attributes: { size: "SESSION" }, stockOnHand: 2 } });
+    const details = {
+      customerName: "Guest Customer",
+      email: "guest@test.invalid",
+      phone: "+8801700000000",
+      deliveryAddress: "12 Example Road",
+      district: "Dhaka" as const,
+      postcode: "1200",
+      customerNote: "",
+      items: [{ variantId: variant.id, quantity: 1 }],
+    };
+    const original = { id: config.SSLCOMMERZ_STORE_ID, password: config.SSLCOMMERZ_STORE_PASSWORD, origin: config.PAYMENT_CALLBACK_ORIGIN, mode: config.PAYMENT_MODE };
+    config.SSLCOMMERZ_STORE_ID = "test-store";
+    config.SSLCOMMERZ_STORE_PASSWORD = "test-password";
+    config.PAYMENT_CALLBACK_ORIGIN = "https://shop.example.com";
+    const initiate = vi.spyOn(sslcommerz, "initiateSandboxCheckout").mockResolvedValueOnce({ sessionKey: "session-test", gatewayUrl: "https://sandbox.sslcommerz.com/gwprocess/v4/gw.php?session=test" }).mockRejectedValue(new Error("timeout"));
+    try {
+      const key = randomUUID();
+      const results = await Promise.all([createSandboxOrder(details, key), createSandboxOrder(details, key)]);
+      expect(results[0].id).toBe(results[1].id);
+      expect(initiate).toHaveBeenCalledTimes(1);
+      expect((await createSandboxOrder(details, key)).gatewayUrl).toContain("sandbox.sslcommerz.com");
+      const lookup = await request(app).post("/api/orders/lookup").send({ orderNumber: results[0].id, email: details.email });
+      expect(lookup.body.payment).toMatchObject({ status: "PENDING", canContinue: true });
+      expect(Object.keys(lookup.body.payment).sort()).toEqual(["canContinue", "expiresAt", "status"]);
+      expect((await request(app).post("/api/orders/resume-payment").send({ orderNumber: results[0].id, email: "wrong@test.invalid" })).status).toBe(404);
+      const resume = await request(app).post("/api/orders/resume-payment").send({ orderNumber: results[0].id, email: details.email });
+      expect(resume.status).toBe(200);
+      expect(resume.body.gatewayUrl).toContain("sandbox.sslcommerz.com");
+      expect(resume.body.key).toBeUndefined();
+      const status = await request(app).post("/api/orders/guest-payment-status").send({ orderId: results[0].id, statusToken: resume.body.statusToken });
+      expect(status.body).toMatchObject({ id: results[0].id, paymentStatus: "PENDING", gatewayUrl: null });
+      expect((await request(app).post("/api/orders/guest-payment-status").send({ orderId: randomUUID(), statusToken: resume.body.statusToken })).status).toBe(401);
+      expect(
+        (
+          await request(app)
+            .post("/api/orders/guest-payment-status")
+            .send({ orderId: results[0].id, statusToken: `${resume.body.statusToken}x` })
+        ).status,
+      ).toBe(401);
+      const expiredToken = jwt.sign({}, config.JWT_SECRET, { subject: results[0].id, expiresIn: -1, issuer: "catalogue-api", audience: "catalogue-guest-payment" });
+      expect((await request(app).post("/api/orders/guest-payment-status").send({ orderId: results[0].id, statusToken: expiredToken })).status).toBe(401);
+      const payment = await db.payment.findUniqueOrThrow({ where: { orderId: results[0].id } });
+      const callback = await request(app).post("/api/payments/fail").type("form").send({ tran_id: payment.transactionId });
+      expect(callback.status).toBe(303);
+      expect(new URL(callback.headers.location).searchParams.get("order")).toBe(results[0].id);
+      const unknownCallback = await request(app).post("/api/payments/cancel").type("form").send({ tran_id: "unknown-transaction" });
+      expect(unknownCallback.status).toBe(303);
+      expect(new URL(unknownCallback.headers.location).searchParams.has("order")).toBe(false);
+      await db.payment.update({ where: { id: payment.id }, data: { expiresAt: new Date(Date.now() - 1_000) } });
+      const expiredLookup = await request(app).post("/api/orders/lookup").send({ orderNumber: results[0].id, email: details.email });
+      expect(expiredLookup.body.payment).toMatchObject({ status: "PENDING", canContinue: false });
+      expect((await request(app).post("/api/orders/resume-payment").send({ orderNumber: results[0].id, email: details.email })).status).toBe(409);
+      await db.payment.update({ where: { id: payment.id }, data: { expiresAt: payment.expiresAt } });
+      await db.payment.update({ where: { id: payment.id }, data: { gatewayUrl: "https://example.com/not-sandbox" } });
+      expect((await request(app).post("/api/orders/resume-payment").send({ orderNumber: results[0].id, email: details.email })).status).toBe(409);
+      await db.payment.update({ where: { id: payment.id }, data: { gatewayUrl: payment.gatewayUrl } });
+      config.PAYMENT_MODE = "sslcommerz_sandbox";
+      expect((await request(app).get("/api/orders/payment-mode")).body.mode).toBe("sslcommerz_sandbox");
+      const onlineRetry = await request(app).post("/api/orders").set("idempotency-key", key).send(details);
+      expect(onlineRetry.status).toBe(201);
+      expect(onlineRetry.body.id).toBe(results[0].id);
+      config.PAYMENT_MODE = "offline";
+      const afterSwitch = await request(app).post("/api/orders").set("idempotency-key", key).send(details);
+      expect(afterSwitch.status).toBe(201);
+      expect(afterSwitch.body.id).toBe(results[0].id);
+      expect((await request(app).post("/api/orders").set("idempotency-key", randomUUID()).send(details)).status).toBe(409);
+      expect(initiate).toHaveBeenCalledTimes(1);
+      expect((await request(app).post("/api/orders/payment-status").send({ key })).body).toMatchObject({ id: results[0].id, paymentStatus: "PENDING" });
+      expect((await request(app).post("/api/orders/payment-status").send({ key: randomUUID() })).status).toBe(404);
+      const timeoutKey = randomUUID();
+      const timedOut = await createSandboxOrder(details, timeoutKey);
+      expect(timedOut.gatewayUrl).toBeNull();
+      expect(timedOut.id).not.toBe(results[0].id);
+      expect((await createSandboxOrder(details, timeoutKey)).id).toBe(timedOut.id);
+      expect(initiate).toHaveBeenCalledTimes(2);
+      expect((await db.productVariant.findUniqueOrThrow({ where: { id: variant.id } })).stockReserved).toBe(2);
+    } finally {
+      initiate.mockRestore();
+      config.SSLCOMMERZ_STORE_ID = original.id;
+      config.SSLCOMMERZ_STORE_PASSWORD = original.password;
+      config.PAYMENT_CALLBACK_ORIGIN = original.origin;
+      config.PAYMENT_MODE = original.mode;
+    }
   });
   it("reorders a complete owned image list atomically and rejects stale lists", async () => {
     expect(

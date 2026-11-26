@@ -8,6 +8,7 @@ const env = {
   DATABASE_URL: url,
   TEST_DATABASE_URL: url,
   NODE_ENV: "test",
+  PAYMENT_MODE: "offline",
   CLOUDINARY_API_KEY: "integration-mock",
   GOOGLE_CLIENT_ID: "integration-client",
   GOOGLE_CLIENT_SECRET: "integration-secret",

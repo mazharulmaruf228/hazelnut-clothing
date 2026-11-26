@@ -57,6 +57,13 @@ production image uploads. Configure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET
 if Google login is required, and register the exact redirect URI with Google.
 Password login works without Google credentials; image uploads require Cloudinary.
 
+Keep `PAYMENT_MODE=offline` for real customer traffic. Sandbox testing requires a
+separate test environment/database, sandbox store credentials, and
+`PAYMENT_CALLBACK_ORIGIN=WEB_URL`; set `PAYMENT_MODE=sslcommerz_sandbox` only
+there. The web rewrite must forward `/api/payments/*` to the API. Restore offline
+mode for new checkouts after testing, retaining sandbox credentials and callbacks
+until outstanding attempts have been reconciled. Sandbox payments are not real.
+
 Set the **pre-deploy command** to `npm run db:deploy`, with a suitable timeout
 such as 300 seconds. This applies committed migrations before API startup and
 blocks deployment if they fail. Never use `prisma db push` in production.

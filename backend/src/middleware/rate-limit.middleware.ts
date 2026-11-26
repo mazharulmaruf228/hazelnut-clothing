@@ -18,6 +18,18 @@ export const apiLimit = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
 });
+export const paymentCallbackLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 600,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
+export const paymentStatusLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
 export const orderLimit = rateLimit({
   windowMs: 15 * 60_000,
   limit: 10,
@@ -25,6 +37,12 @@ export const orderLimit = rateLimit({
   legacyHeaders: false,
 });
 export const orderLookupLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 5,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
+export const paymentResumeLimit = rateLimit({
   windowMs: 15 * 60_000,
   limit: 5,
   standardHeaders: "draft-8",

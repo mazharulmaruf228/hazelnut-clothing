@@ -1,10 +1,12 @@
 import { Prisma } from "@prisma/client";
+import { createHash, randomBytes } from "node:crypto";
 import type { z } from "zod";
 import { write } from "../config/database.ts";
 import { orderModel } from "../models/order.model.ts";
 import { HttpError } from "../utils/http-error.ts";
 import { effectivePrice } from "../utils/money.ts";
 import { deliveryChargeFor, deliveryOptions } from "../utils/delivery.ts";
+import { sandboxGatewayUrl } from "../utils/payment-gateway.ts";
 import type { createOrderInput, orderEditInput } from "../validators/catalogue.validator.ts";
 import type { orderLookupInput } from "../validators/catalogue.validator.ts";
 
@@ -21,8 +23,26 @@ function orderDto(order: Awaited<ReturnType<typeof orderModel.findById>>) {
   };
 }
 
-export async function createOrder(input: CreateOrderInput) {
+export async function createOrder(input: CreateOrderInput, online?: { idempotencyKey: string; expiresAt: Date }) {
+  const fingerprint = online
+    ? createHash("sha256")
+        .update(JSON.stringify({ ...input, items: [...input.items].sort((first, second) => first.variantId.localeCompare(second.variantId)) }))
+        .digest("hex")
+    : "";
   return write(async (client) => {
+    if (online) {
+      const existing = await client.payment.findUnique({ where: { idempotencyKey: online.idempotencyKey }, include: { order: true } });
+      if (existing) {
+        if (existing.requestFingerprint !== fingerprint) throw new HttpError(409, "This checkout key was already used for a different order");
+        return {
+          id: existing.order.id,
+          status: existing.order.status,
+          subtotal: existing.order.subtotal.toFixed(2),
+          deliveryCharge: existing.order.deliveryCharge.toFixed(2),
+          total: existing.order.subtotal.add(existing.order.deliveryCharge).toFixed(2),
+        };
+      }
+    }
     const variants = await client.productVariant.findMany({
       where: { id: { in: input.items.map((item) => item.variantId) } },
       include: { product: true },
@@ -68,6 +88,19 @@ export async function createOrder(input: CreateOrderInput) {
       },
       client,
     );
+    if (online) {
+      const total = subtotal.add(order.deliveryCharge);
+      if (total.lessThan(10) || total.greaterThan(500000)) throw new HttpError(400, "Online payment amount must be between 10 and 500000 BDT");
+      await client.payment.create({
+        data: {
+          orderId: order.id,
+          idempotencyKey: online.idempotencyKey,
+          requestFingerprint: fingerprint,
+          transactionId: randomBytes(15).toString("hex"),
+          expiresAt: online.expiresAt,
+        },
+      });
+    }
     return {
       id: order.id,
       status: order.status,
@@ -79,7 +112,23 @@ export async function createOrder(input: CreateOrderInput) {
 }
 
 export async function listOrders() {
-  return (await orderModel.list()).map(orderDto);
+  return (await orderModel.list()).map((order) => ({
+    ...orderDto(order),
+    payment: order.payment
+      ? {
+          status: order.payment.status,
+          expiresAt: order.payment.expiresAt,
+          paidAt: order.payment.paidAt,
+          bankTransactionId: order.payment.bankTransactionId,
+          refundAmount: order.payment.refundAmount?.toFixed(2) ?? null,
+          refundReference: order.payment.refundReference,
+          refundNote: order.payment.refundNote,
+          refundedBy: order.payment.refundedBy,
+          refundedAt: order.payment.refundedAt,
+          duplicateCharges: order.payment.duplicateCharges.map((charge) => ({ id: charge.id, bankTransactionId: charge.bankTransactionId, refundReference: charge.refundReference, refundNote: charge.refundNote, refundedBy: charge.refundedBy, refundedAt: charge.refundedAt })),
+        }
+      : null,
+  }));
 }
 
 export function getDeliveryOptions() {
@@ -89,12 +138,23 @@ export function getDeliveryOptions() {
 export async function lookupGuestOrder(input: z.infer<typeof orderLookupInput>) {
   const order = await orderModel.findForGuestLookup(input.orderNumber, input.email, input.phone);
   if (!order) throw new HttpError(404, "No order matched that order number and contact detail");
-  return orderDto(order);
+  const { payment, ...guestOrder } = order;
+  return {
+    ...orderDto(guestOrder),
+    payment: payment
+      ? {
+          status: payment.status,
+          expiresAt: payment.expiresAt,
+          canContinue: order.status === "PENDING_REVIEW" && payment.status === "PENDING" && payment.expiresAt > new Date() && Boolean(sandboxGatewayUrl(payment.gatewayUrl)),
+        }
+      : null,
+  };
 }
 
 export async function editOrder(id: string, input: OrderEditInput) {
   return write(async (client) => {
     const order = await orderModel.findById(id, client);
+    if (await client.payment.findUnique({ where: { orderId: id } })) throw new HttpError(409, "Online payment orders cannot be edited");
     if (order.status !== "PENDING_REVIEW") throw new HttpError(409, "Only pending orders can be edited");
     if (order.updatedAt.getTime() !== new Date(input.updatedAt).getTime()) throw new HttpError(409, "This order changed since it was opened. Reload and try again.");
 
@@ -184,6 +244,8 @@ export async function updateOrderStatus(id: string, status: "CONFIRMED" | "REJEC
     const order = await orderModel.findById(id, client);
     if (order.status === status) return orderDto(order);
     if (order.status !== "PENDING_REVIEW") throw new HttpError(409, "Only pending orders can be reviewed");
+    const payment = await client.payment.findUnique({ where: { orderId: id } });
+    if (payment && payment.status !== "PAID") throw new HttpError(409, "Online payment must be verified before reviewing this order");
 
     for (const item of order.items) {
       if (!item.variantId) continue;
@@ -198,6 +260,7 @@ export async function updateOrderStatus(id: string, status: "CONFIRMED" | "REJEC
       if (updated.count !== 1) throw new HttpError(409, "Reserved stock changed; the order could not be reviewed");
     }
 
+    if (payment && status === "REJECTED") await client.payment.update({ where: { id: payment.id }, data: { status: "REFUND_REQUIRED" } });
     return orderDto(await orderModel.updateStatus(id, status, client));
   });
 }

@@ -129,8 +129,8 @@ export function ProductDetail({ product, initialVariant }: { product: Product; i
 
             <Button
               disabled={!maximumQuantity}
-              onClick={() => {
-                addCartLine({
+              onClick={async () => {
+                await addCartLine({
                   variantId: selected.id,
                   productId: product.id,
                   slug: product.slug,

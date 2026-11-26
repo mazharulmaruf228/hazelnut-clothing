@@ -35,6 +35,15 @@
 6. Test real Cloudinary upload/assignment/deletion and Google signup, ADMIN approval,
    subsequent login and authenticated linking. Verify EDITOR cannot manage users.
 
+Keep `PAYMENT_MODE=offline` for real customer traffic. Sandbox checkout is only
+for an isolated test deployment and database: configure sandbox credentials and
+the public HTTPS `PAYMENT_CALLBACK_ORIGIN`, ensure `/api/payments/*` reaches the
+API, and restart after changing the mode. Keep credentials and callbacks available
+after switching offline until outstanding sandbox attempts are reconciled. Check
+`payment_expiry_unavailable` and `payment_reconciliation_unavailable` logs and
+`duplicate_payment_requires_refund` logs, as well as admin refund-required orders
+and extra charges. Sandbox payments are not real payments.
+
 All containers log to bounded json-file logs. PostgreSQL uses a named persistent
 volume. PostgreSQL 18 persists at `/var/lib/postgresql`; do not change its major
 version without a dump/restore or a reviewed `pg_upgrade` procedure.

@@ -1,9 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 
-const database =
-  process.env.TEST_DATABASE_URL ||
-  "postgresql://catalogue:change-me@127.0.0.1:55432/catalogue_test?schema=public";
+const database = process.env.TEST_DATABASE_URL || "postgresql://catalogue:change-me@127.0.0.1:55432/catalogue_test?schema=public";
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,
@@ -46,6 +44,7 @@ export default defineConfig({
         PUBLIC_ORIGIN: "http://localhost:3100",
         PORT: "4100",
         NODE_ENV: "test",
+        PAYMENT_MODE: "offline",
       },
     },
     {
