@@ -4,7 +4,7 @@ import { db } from "./config/database.ts";
 import { processAssetDeletions } from "./services/asset-cleanup.service.ts";
 import { expirePaymentReservations, reconcilePayments } from "./services/payment.service.ts";
 
-const server = app.listen(config.PORT, "0.0.0.0", () => console.log(`Catalogue API: http://localhost:${config.PORT}`));
+const server = app.listen(config.PORT, "0.0.0.0", () => console.log(`Server running on: http://localhost:${config.PORT}`));
 let cleaning = false;
 const cleanup = setInterval(async () => {
   if (cleaning) return;
