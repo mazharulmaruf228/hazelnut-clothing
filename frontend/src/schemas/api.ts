@@ -19,8 +19,8 @@ export const variantSchema = z.object({
   attributes: z.record(z.string(), z.string()),
   isDefault: z.boolean(),
   isActive: z.boolean(),
-  inStock: z.boolean(),
-  availableQuantity: z.number().int().nonnegative(),
+  inStock: z.boolean().default(false),
+  availableQuantity: z.number().int().nonnegative().default(0),
   stockOnHand: z.number().optional(),
   stockReserved: z.number().optional(),
 });

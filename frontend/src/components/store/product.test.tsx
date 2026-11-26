@@ -3,7 +3,7 @@ import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { ProductCard } from "./product-card";
 import { ProductDetail } from "./product-detail";
-import type { Product } from "../../schemas/api";
+import { productListSchema, variantSchema, type Product } from "../../schemas/api";
 import { setCartQuantity } from "@/lib/cart";
 
 vi.mock("next/image", () => ({
@@ -72,6 +72,25 @@ const product: Product = {
   ],
 };
 describe("public product controls", () => {
+  it("renders legacy catalogue responses without enabling unknown inventory", () => {
+    const legacyProduct = {
+      ...product,
+      variants: product.variants.map(({ inStock, availableQuantity, ...variant }) => {
+        void inStock;
+        void availableQuantity;
+        return variant;
+      }),
+    };
+    const catalogue = productListSchema.parse({ items: [legacyProduct], total: 1, page: 1, pageSize: 12, totalPages: 1 });
+    expect(catalogue.items[0].variants).toEqual(product.variants.map((variant) => ({ ...variant, inStock: false, availableQuantity: 0 })));
+    render(<ProductDetail product={catalogue.items[0]} />);
+    expect(screen.getByRole("button", { name: "Out of stock" })).toBeDisabled();
+  });
+  it("preserves reported inventory and rejects invalid stock values", () => {
+    expect(variantSchema.parse(product.variants[0])).toEqual(product.variants[0]);
+    expect(variantSchema.safeParse({ ...product.variants[0], availableQuantity: -1 }).success).toBe(false);
+    expect(variantSchema.safeParse({ ...product.variants[0], inStock: "true" }).success).toBe(false);
+  });
   it("starts with the active default variant", () => {
     render(<ProductDetail product={product} />);
     expect(screen.getByRole("button", { name: "M" })).toHaveAttribute("aria-pressed", "true");
