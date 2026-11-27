@@ -6,15 +6,15 @@ export type OrderRecord = Prisma.OrderGetPayload<{ include: typeof orderRelation
 
 export const orderModel = {
   create: (data: Prisma.OrderUncheckedCreateInput, client: Prisma.TransactionClient) => client.order.create({ data, include: orderRelations }),
-  list: () => db.order.findMany({ include: orderRelations, orderBy: [{ createdAt: "desc" }, { id: "asc" }] }),
+  list: () => db.order.findMany({ include: { ...orderRelations, payment: { include: { duplicateCharges: true } } }, orderBy: [{ createdAt: "desc" }, { id: "asc" }] }),
   findById: (id: string, client: Prisma.TransactionClient) => client.order.findUniqueOrThrow({ where: { id }, include: orderRelations }),
-  findForGuestLookup: (id: string, email: string | undefined, phone: string | undefined) =>
-    db.order.findFirst({
+  findForGuestLookup: (id: string, email: string | undefined, phone: string | undefined, client: Prisma.TransactionClient = db) =>
+    client.order.findFirst({
       where: {
         id,
         ...(email ? { email: { equals: email, mode: "insensitive" as const } } : { phone }),
       },
-      include: orderRelations,
+      include: { ...orderRelations, payment: { select: { status: true, expiresAt: true, gatewayUrl: true } } },
     }),
   updateStatus: (id: string, status: OrderStatus, client: Prisma.TransactionClient) => client.order.update({ where: { id }, data: { status }, include: orderRelations }),
   update: (id: string, data: Prisma.OrderUncheckedUpdateInput, client: Prisma.TransactionClient) => client.order.update({ where: { id }, data, include: orderRelations }),

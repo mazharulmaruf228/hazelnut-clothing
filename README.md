@@ -2,8 +2,9 @@
 
 Next.js storefront and CMS with a separate Express REST API, Prisma/PostgreSQL,
 Cloudinary media and email/password plus Google admin authentication. BDT is the
-single currency. Guest cart, inventory reservations, and manual order review are
-available; online payments and delivery integrations are not yet included.
+single currency. Guest cart, inventory reservations, and COD order review are
+available. Stripe-hosted Checkout is available in sandbox mode only; live
+payments and delivery integrations are not included.
 
 ## Structure
 
@@ -99,6 +100,15 @@ Use the CMS to add additional ADMIN/EDITOR users.
   Existing local accounts are never linked by email alone; sign in with a password,
   then use Account -> Link Google account. Unconfigured Google login reports that
   it is unavailable; it does not bypass authentication.
+- **Stripe sandbox:** `STRIPE_ENABLED=false` keeps new checkout COD-only.
+  In an isolated test environment, configure backend-only `STRIPE_SECRET_KEY`
+  and `STRIPE_WEBHOOK_SECRET`, apply migrations, then enable Stripe and restart
+  the API. For local testing, keep `stripe listen --latest --forward-to
+http://localhost:4000/api/webhooks/stripe` running, using your actual API port.
+  On staging, register `<origin>/api/webhooks/stripe` as an HTTPS webhook endpoint.
+  Keep the webhook and reconciliation active when disabling new Stripe payments.
+  See `backend/README.md` for events, restricted keys, refunds and scheduling.
+  Sandbox payments do not collect real money; live activation is not included.
 - Seed photographs are externally hosted Unsplash examples for development.
   Replace them with your licensed product photographs in Cloudinary before launch.
 
@@ -128,20 +138,29 @@ Use the CMS to add additional ADMIN/EDITOR users.
   quantities only; the API rechecks published/active state and calculates prices.
 - Stock is tracked per variant. New orders reserve stock atomically and enter
   `PENDING_REVIEW`; admin confirmation consumes the reservation, while rejection
-  releases it. Pending reservations do not expire automatically yet.
+  releases it. Offline pending reservations do not expire automatically.
 - Existing products start with zero stock after migration. Set stock in the
   product's variant editor before accepting orders. The development seed assigns
   ten units to newly created demo variants.
-- Orders are unpaid. Checkout collects a Bangladesh district and postcode and
+- Offline orders are unpaid. Checkout collects a Bangladesh district and postcode and
   calculates Tk 80 delivery for Dhaka district or Tk 100 for any other district.
   The backend determines and stores the fee; admins can change the district on a
   pending order to recalculate it. Existing orders retain their free-form address
   and start with no delivery fee.
-- Guests can look up one order using its order number and the checkout email or
-  phone number. There are no customer accounts or all-orders-by-contact listing.
-- `backend/openapi.yaml` documents the public order submission and admin review
-  endpoints. No customer accounts, payment processing, or carrier integration is
-  included in this stage.
+- Guests can look up one order using its order number and checkout email or phone.
+  There are no customer accounts or all-orders-by-contact listing. The original
+  random checkout key protects the minimal payment-status receipt separately.
+- Stripe sandbox orders reserve stock for one hour and automatically confirm only
+  after verified payment. Their item and total snapshots cannot be edited. The
+  cart remains while unpaid; confirmed purchases are settled once using the same
+  cart lock as cross-tab edits. Expired unpaid reservations are released safely.
+  ADMIN can cancel unshipped Stripe orders, restoring stock once and requesting a
+  full refund automatically. Refund processing is tracked separately and may
+  remain pending or failed. Reconciliation recovers missed events and interrupted
+  refunds. External partial refunds and payment discrepancies require staff
+  investigation. Historical gateway records and migrations remain preserved.
+- `backend/openapi.yaml` documents checkout and admin endpoints. No customer
+  accounts, live payment processing, or carrier integration is included.
 
 ## Verification
 

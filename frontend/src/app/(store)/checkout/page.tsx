@@ -80,7 +80,7 @@ export default function CheckoutPage() {
         return;
       }
       if (!parsed.success) {
-        clearCart();
+        await clearCart();
         router.push("/order-placed?receipt=unavailable");
         return;
       }
@@ -90,7 +90,7 @@ export default function CheckoutPage() {
       } catch {
         receiptSaved = false;
       }
-      clearCart();
+      await clearCart();
       router.push(`/order-placed?order=${encodeURIComponent(parsed.data.id)}${receiptSaved ? "" : "&receipt=unavailable"}`);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to place this order. Please try again.");

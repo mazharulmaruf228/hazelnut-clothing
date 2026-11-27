@@ -316,16 +316,18 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
         customerNote: "",
         subtotal: "900.00",
         items: {
-          create: [{
-            productId,
-            variantId: defaultId,
-            productName: "Test Shirt",
-            variantName: "Medium",
-            sku: "TEST-M",
-            quantity: 1,
-            unitPrice: "900.00",
-            lineTotal: "900.00",
-          }],
+          create: [
+            {
+              productId,
+              variantId: defaultId,
+              productName: "Test Shirt",
+              variantName: "Medium",
+              sku: "TEST-M",
+              quantity: 1,
+              unitPrice: "900.00",
+              lineTotal: "900.00",
+            },
+          ],
         },
       },
     });
@@ -346,12 +348,15 @@ describe.sequential("real PostgreSQL catalogue workflows", () => {
     const unchangedLegacy = await admin.patch(`/api/admin/orders/${legacy.id}`).set(adminHeaders).send(legacyEdit);
     expect(unchangedLegacy.status).toBe(200);
     expect(unchangedLegacy.body).toMatchObject({ deliveryArea: "Old free-form area", district: null, postcode: null, deliveryCharge: "0.00", total: "900.00" });
-    const explicitlyPricedLegacy = await admin.patch(`/api/admin/orders/${legacy.id}`).set(adminHeaders).send({
-      ...legacyEdit,
-      district: "Dhaka",
-      postcode: "1200",
-      updatedAt: unchangedLegacy.body.updatedAt,
-    });
+    const explicitlyPricedLegacy = await admin
+      .patch(`/api/admin/orders/${legacy.id}`)
+      .set(adminHeaders)
+      .send({
+        ...legacyEdit,
+        district: "Dhaka",
+        postcode: "1200",
+        updatedAt: unchangedLegacy.body.updatedAt,
+      });
     expect(explicitlyPricedLegacy.status).toBe(200);
     expect(explicitlyPricedLegacy.body).toMatchObject({ deliveryArea: "Old free-form area", district: "Dhaka", deliveryCharge: "80.00", total: "980.00" });
     expect((await admin.get("/api/admin/orders")).body.items).toHaveLength(4);

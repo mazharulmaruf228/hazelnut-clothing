@@ -36,10 +36,10 @@ export function savePaymentOrder(attempt: Attempt, orderId: string) {
   sessionStorage.setItem(storageKey, JSON.stringify({ ...attempt, orderId }));
 }
 
-export function completePaidCart(orderId: string) {
+export async function completePaidCart(orderId: string) {
   const attempt = storedPaymentAttempt();
   if (attempt?.orderId === orderId) {
-    settlePaidCart(orderId, attempt.items);
+    await settlePaidCart(orderId, attempt.items);
     finalizePaymentAttempt(orderId);
   }
 }

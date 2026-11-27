@@ -118,7 +118,7 @@ function StripeReceipt({ orderNumber }: { orderNumber: string }) {
         setReceipt(current);
         if (current.status === "CONFIRMED" && current.paymentStatus === "PAID") {
           try {
-            completePaidCart(orderNumber);
+            await completePaidCart(orderNumber);
           } catch {}
         } else if (current.status === "PAYMENT_EXPIRED" || current.status === "CANCELLED") {
           try {

@@ -4,14 +4,14 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { orderSchema, type Order } from "@/schemas/api";
+import { guestOrderSchema, type GuestOrder } from "@/schemas/api";
 import { errorMessage, money } from "@/lib/utils";
 
 export default function OrderHistoryPage() {
   const [orderNumber, setOrderNumber] = useState("");
   const [contactType, setContactType] = useState<"email" | "phone">("email");
   const [contact, setContact] = useState("");
-  const [order, setOrder] = useState<Order>();
+  const [order, setOrder] = useState<GuestOrder>();
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -22,17 +22,15 @@ export default function OrderHistoryPage() {
     setError("");
     setOrder(undefined);
     try {
+      const lookupInput = { orderNumber: orderNumber.trim(), [contactType]: contact.trim() };
       const response = await fetch("/api/orders/lookup", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          orderNumber: orderNumber.trim(),
-          [contactType]: contact.trim(),
-        }),
+        body: JSON.stringify(lookupInput),
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(errorMessage({ data: body }));
-      const parsed = orderSchema.safeParse(body);
+      const parsed = guestOrderSchema.safeParse(body);
       if (!parsed.success) throw new Error("The order lookup returned invalid details.");
       setOrder(parsed.data);
     } catch (lookupError) {

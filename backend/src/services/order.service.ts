@@ -94,7 +94,23 @@ export async function createOrder(input: CreateOrderInput) {
 }
 
 export async function listOrders() {
-  return (await orderModel.list()).map(orderDto);
+  return (await orderModel.list()).map((order) => ({
+    ...orderDto(order),
+    payment: order.payment
+      ? {
+          status: order.payment.status,
+          expiresAt: order.payment.expiresAt,
+          paidAt: order.payment.paidAt,
+          bankTransactionId: order.payment.bankTransactionId,
+          refundAmount: order.payment.refundAmount?.toFixed(2) ?? null,
+          refundReference: order.payment.refundReference,
+          refundNote: order.payment.refundNote,
+          refundedBy: order.payment.refundedBy,
+          refundedAt: order.payment.refundedAt,
+          duplicateCharges: order.payment.duplicateCharges.map((charge) => ({ id: charge.id, bankTransactionId: charge.bankTransactionId, refundReference: charge.refundReference, refundNote: charge.refundNote, refundedBy: charge.refundedBy, refundedAt: charge.refundedAt })),
+        }
+      : null,
+  }));
 }
 
 export function getDeliveryOptions() {
@@ -104,13 +120,24 @@ export function getDeliveryOptions() {
 export async function lookupGuestOrder(input: z.infer<typeof orderLookupInput>) {
   const order = await orderModel.findForGuestLookup(input.orderNumber, input.email, input.phone);
   if (!order) throw new HttpError(404, "No order matched that order number and contact detail");
-  return orderDto(order);
+  const { payment, ...guestOrder } = order;
+  return {
+    ...orderDto(guestOrder),
+    payment: payment
+      ? {
+          status: payment.status,
+          expiresAt: payment.expiresAt,
+          canContinue: false,
+        }
+      : null,
+  };
 }
 
 export async function editOrder(id: string, input: OrderEditInput) {
   return write(async (client) => {
     const order = await orderModel.findById(id, client);
     if (order.status !== "PENDING_REVIEW" || order.paymentMethod !== "COD") throw new HttpError(409, "Only pending COD orders can be edited");
+    if (await client.payment.findUnique({ where: { orderId: id } })) throw new HttpError(409, "Legacy online payment orders cannot be edited");
     if (order.updatedAt.getTime() !== new Date(input.updatedAt).getTime()) throw new HttpError(409, "This order changed since it was opened. Reload and try again.");
 
     const previousItems = order.items.map((item) => ({ variantId: item.variantId, quantity: item.quantity })).sort((first, second) => (first.variantId ?? "").localeCompare(second.variantId ?? ""));
@@ -200,6 +227,8 @@ export async function updateOrderStatus(id: string, status: "CONFIRMED" | "REJEC
     if (order.paymentMethod !== "COD") throw new HttpError(409, "Stripe orders are confirmed by verified payment");
     if (order.status === status) return orderDto(order);
     if (order.status !== "PENDING_REVIEW") throw new HttpError(409, "Only pending orders can be reviewed");
+    const payment = await client.payment.findUnique({ where: { orderId: id } });
+    if (payment && payment.status !== "PAID") throw new HttpError(409, "Online payment must be verified before reviewing this order");
 
     for (const item of order.items) {
       if (!item.variantId) continue;
@@ -214,6 +243,7 @@ export async function updateOrderStatus(id: string, status: "CONFIRMED" | "REJEC
       if (updated.count !== 1) throw new HttpError(409, "Reserved stock changed; the order could not be reviewed");
     }
 
+    if (payment && status === "REJECTED") await client.payment.update({ where: { id: payment.id }, data: { status: "REFUND_REQUIRED" } });
     return orderDto(await orderModel.updateStatus(id, status, client));
   });
 }

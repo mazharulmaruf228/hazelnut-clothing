@@ -294,26 +294,45 @@ export default function OrdersPage() {
                     {order.status.replaceAll("_", " ")}
                   </span>
                 </TableCell>
-                <TableCell>
-                  <span className="block whitespace-nowrap text-xs">{order.paymentMethod === "STRIPE" ? "Stripe (test)" : "Cash on delivery"}</span>
-                  <small className="mt-1 block whitespace-nowrap text-[10px] text-muted">{order.paymentStatus.replaceAll("_", " ")}</small>
-                  {order.paymentReviewRequired && <small className="mt-1 block text-[10px] text-destructive">Payment requires investigation</small>}
+                <TableCell className="min-w-37.5">
+                  {order.payment ? (
+                    <>
+                      <span>Legacy payment · {order.payment.status.replaceAll("_", " ")}</span>
+                      {order.payment.bankTransactionId && <small className="mt-1 block break-all text-[10px] text-muted">Bank: {order.payment.bankTransactionId}</small>}
+                      {order.payment.refundReference && <small className="mt-1 block break-all text-[10px] text-muted">Refund: {order.payment.refundReference}</small>}
+                      {order.payment.duplicateCharges.map((charge) => (
+                        <div className="mt-2 border-t border-line pt-2" key={charge.id}>
+                          <small className="block text-[10px] text-muted">Extra charge: {charge.refundedAt ? "refund recorded" : "refund required"}</small>
+                          {charge.bankTransactionId && <small className="block break-all text-[10px] text-muted">Bank: {charge.bankTransactionId}</small>}
+                          {charge.refundReference && <small className="block break-all text-[10px] text-muted">Refund: {charge.refundReference}</small>}
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <span className="block whitespace-nowrap text-xs">{order.paymentMethod === "STRIPE" ? "Stripe (test)" : "Cash on delivery"}</span>
+                      <small className="mt-1 block whitespace-nowrap text-[10px] text-muted">{order.paymentStatus.replaceAll("_", " ")}</small>
+                      {order.paymentReviewRequired && <small className="mt-1 block text-[10px] text-destructive">Payment requires investigation</small>}
+                    </>
+                  )}
                 </TableCell>
                 <TableCell>
                   {order.status === "PENDING_REVIEW" && order.paymentMethod === "COD" ? (
                     <div className="flex items-center gap-[3px] whitespace-nowrap">
-                      <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Edit order" aria-label={`Edit order for ${order.customerName}`} onClick={() => setEditingOrder(order)}>
-                        <Pencil size={15} />
-                      </Button>
-                      <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Confirm order and consume reserved stock" aria-label="Confirm order" disabled={isLoading} onClick={() => void review(order.id, "CONFIRMED")}>
+                      {!order.payment && (
+                        <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Edit order" aria-label={`Edit order for ${order.customerName}`} onClick={() => setEditingOrder(order)}>
+                          <Pencil size={15} />
+                        </Button>
+                      )}
+                      <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Confirm order and consume reserved stock" aria-label="Confirm order" disabled={isLoading || Boolean(order.payment && order.payment.status !== "PAID")} onClick={() => void review(order.id, "CONFIRMED")}>
                         <Check size={16} />
                       </Button>
                       <Confirm
                         title="Reject order?"
-                        description="Rejecting this order releases its reserved stock."
+                        description={order.payment ? "Rejecting this paid order releases its reserved stock and requires an external refund." : "Rejecting this order releases its reserved stock."}
                         onConfirm={() => review(order.id, "REJECTED")}
                         trigger={
-                          <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Reject order" aria-label="Reject order" disabled={isLoading}>
+                          <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Reject order" aria-label="Reject order" disabled={isLoading || Boolean(order.payment && order.payment.status !== "PAID")}>
                             <X size={16} />
                           </Button>
                         }

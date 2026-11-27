@@ -40,6 +40,16 @@ enum OrderPaymentStatus {
   REFUNDED
 }
 
+enum PaymentStatus {
+  INITIATING
+  PENDING
+  PAID
+  RISK_REVIEW
+  EXPIRED
+  REFUND_REQUIRED
+  REFUNDED
+}
+
 model Category {
   id          String     @id @default(uuid())
   name        String
@@ -120,6 +130,7 @@ model Order {
   subtotal        Decimal     @db.Decimal(12, 2)
   deliveryCharge  Decimal     @default(0) @db.Decimal(12, 2)
   items           OrderItem[]
+  payment         Payment?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -130,6 +141,50 @@ model Order {
 model PaymentEvent {
   id          String   @id
   processedAt DateTime @default(now())
+}
+
+model Payment {
+  id                 String        @id @default(uuid())
+  orderId            String        @unique
+  order              Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  status             PaymentStatus @default(INITIATING)
+  idempotencyKey     String        @unique
+  requestFingerprint String
+  transactionId      String        @unique @db.VarChar(30)
+  sessionKey         String?       @unique
+  initiationStartedAt DateTime?
+  gatewayUrl         String?
+  validationId       String?       @unique
+  bankTransactionId  String?
+  expiresAt          DateTime
+  nextReconcileAt    DateTime      @default(now())
+  paidAt             DateTime?
+  refundAmount       Decimal?      @db.Decimal(12, 2)
+  refundReference    String?
+  refundNote         String?
+  refundedBy         String?
+  refundedAt         DateTime?
+  duplicateCharges   DuplicatePaymentCharge[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([status, expiresAt])
+  @@index([status, nextReconcileAt])
+}
+
+model DuplicatePaymentCharge {
+  id                String   @id @default(uuid())
+  paymentId         String
+  payment           Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  validationId      String   @unique
+  bankTransactionId String?
+  refundReference   String?
+  refundNote        String?
+  refundedBy        String?
+  refundedAt        DateTime?
+  createdAt         DateTime @default(now())
+
+  @@index([paymentId])
 }
 
 model OrderItem {

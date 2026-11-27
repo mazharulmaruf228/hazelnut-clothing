@@ -156,6 +156,7 @@ test("guest checkout reserves stock for admin review", async ({ page }) => {
   await page.getByRole("link", { name: "Cart, 1 item" }).click();
   await expect(page.getByRole("heading", { name: "Shopping bag" })).toBeVisible();
   await page.getByRole("link", { name: "Continue to checkout" }).click();
+  await page.evaluate((key) => sessionStorage.setItem("hazelnut-payment-checkout", JSON.stringify({ key, fingerprint: "previous", items: [{ variantId: "previous", quantity: 1 }], settled: false })), randomUUID());
   await page.getByLabel("Name", { exact: true }).fill(customerName);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Phone", { exact: true }).fill("+8801700000000");
@@ -164,6 +165,7 @@ test("guest checkout reserves stock for admin review", async ({ page }) => {
   await page.getByLabel("House / road", { exact: true }).fill("12 Example Road, Dhaka");
   await page.getByRole("button", { name: "Place order for review" }).click();
   await expect(page.getByRole("heading", { name: "Thank you." })).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("hazelnut-payment-checkout") || "null").settled)).toBe(false);
 
   await login(page);
   await page.getByRole("link", { name: "Orders", exact: true }).click();
@@ -185,6 +187,7 @@ test("guest checkout reserves stock for admin review", async ({ page }) => {
   await orderRow.getByRole("button", { name: "Confirm order" }).click();
   await expect(orderRow).toContainText("CONFIRMED");
 });
+
 test("featured carousel respects reduced motion and supports keyboard navigation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
