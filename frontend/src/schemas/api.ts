@@ -86,9 +86,18 @@ export const orderItemSchema = z.object({
   lineTotal: z.string(),
 });
 
+const orderStatusSchema = z.enum(["PENDING_REVIEW", "CONFIRMED", "REJECTED", "PENDING_PAYMENT", "PAYMENT_EXPIRED", "CANCELLED"]);
+const paymentFields = {
+  paymentMethod: z.enum(["COD", "STRIPE"]).default("COD"),
+  paymentStatus: z.enum(["UNPAID", "PENDING", "PAID", "REFUND_PENDING", "REFUND_FAILED", "REFUNDED"]).default("UNPAID"),
+  currency: z.literal("bdt").default("bdt"),
+};
+export const paymentMethodsSchema = z.object({ items: z.array(z.enum(["COD", "STRIPE"])), stripeTestMode: z.boolean() });
 export const orderSchema = z.object({
   id: z.string(),
-  status: z.enum(["PENDING_REVIEW", "CONFIRMED", "REJECTED"]),
+  status: orderStatusSchema,
+  ...paymentFields,
+  paymentReviewRequired: z.boolean().default(false),
   customerName: z.string(),
   email: z.string(),
   phone: z.string(),
@@ -108,7 +117,9 @@ export const orderSchema = z.object({
 export type Order = z.infer<typeof orderSchema>;
 export const orderReceiptSchema = z.object({
   id: z.string(),
-  status: z.enum(["PENDING_REVIEW", "CONFIRMED", "REJECTED"]),
+  status: orderStatusSchema,
+  ...paymentFields,
+  checkoutUrl: z.url().nullable().optional(),
   subtotal: z.string(),
   deliveryCharge: z.string(),
   total: z.string(),

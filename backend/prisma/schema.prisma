@@ -21,6 +21,23 @@ enum OrderStatus {
   PENDING_REVIEW
   CONFIRMED
   REJECTED
+  PENDING_PAYMENT
+  PAYMENT_EXPIRED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  COD
+  STRIPE
+}
+
+enum OrderPaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  REFUND_PENDING
+  REFUND_FAILED
+  REFUNDED
 }
 
 model Category {
@@ -80,6 +97,18 @@ model ProductVariant {
 model Order {
   id              String      @id @default(uuid())
   status          OrderStatus @default(PENDING_REVIEW)
+  paymentMethod   PaymentMethod @default(COD)
+  paymentStatus   OrderPaymentStatus @default(UNPAID)
+  currency        String        @default("bdt")
+  checkoutKeyHash String?       @unique
+  checkoutInputHash String?
+  stripeSessionId String?       @unique
+  stripeCheckoutUrl String?
+  stripePaymentIntentId String? @unique
+  stripeRefundId  String?       @unique
+  paymentExpiresAt DateTime?
+  refundAttempt   Int           @default(0)
+  paymentReviewRequired Boolean @default(false)
   customerName    String
   email           String
   phone           String
@@ -95,6 +124,12 @@ model Order {
   updatedAt       DateTime    @updatedAt
 
   @@index([status, createdAt])
+  @@index([paymentMethod, paymentStatus])
+}
+
+model PaymentEvent {
+  id          String   @id
+  processedAt DateTime @default(now())
 }
 
 model OrderItem {

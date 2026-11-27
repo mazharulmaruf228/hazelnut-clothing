@@ -1,18 +1,18 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import Link from "next/link";
+import { cache } from "react";
 import { getProduct, ApiError } from "@/services/server-api";
-import { ProductDetail } from "@/components/store/product-detail";
+import { ProductContent } from "@/components/store/product-content";
 
 export const dynamic = "force-dynamic";
-async function findProduct(slug: string) {
+const findProduct = cache(async (slug: string) => {
   try {
     return await getProduct(slug);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
-}
+});
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const product = await findProduct(slug);
@@ -52,20 +52,13 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
   };
   return (
     <div className="mx-auto max-w-[1350px] px-[5%] pt-[22px] pb-[70px] max-[700px]:pt-4">
-      <nav className="mb-6 flex flex-wrap gap-2 text-[11px] text-muted max-[700px]:text-[10px]" aria-label="Breadcrumb">
-        <Link href="/">Home</Link>
-        <span>/</span>
-        <Link href={`/categories/${product.category.slug}`}>{product.category.name}</Link>
-        <span>/</span>
-        <span>{product.name}</span>
-      </nav>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c"),
         }}
       />
-      <ProductDetail product={product} initialVariant={variant} />
+      <ProductContent slug={slug} initialVariant={variant} />
     </div>
   );
 }

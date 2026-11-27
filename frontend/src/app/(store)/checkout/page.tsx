@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -11,7 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCart, clearCart } from "@/lib/cart";
 import { money } from "@/lib/utils";
 import { useDeliveryOptions } from "@/lib/delivery";
-import { orderReceiptSchema } from "@/schemas/api";
+import { orderReceiptSchema, paymentMethodsSchema } from "@/schemas/api";
+import { preparePaymentAttempt, savePaymentOrder } from "@/lib/payment";
 
 export default function CheckoutPage() {
   const { lines } = useCart();
@@ -20,6 +21,18 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [district, setDistrict] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"COD" | "STRIPE">("COD");
+  const [stripeAvailable, setStripeAvailable] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/orders/payment-methods", { signal: controller.signal })
+      .then(async (response) => (response.ok ? paymentMethodsSchema.parse(await response.json()) : null))
+      .then((methods) => {
+        if (!controller.signal.aborted) setStripeAvailable(methods?.items.includes("STRIPE") ?? false);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
   const subtotal = lines.reduce((total, line) => total + Number(line.unitPrice) * line.quantity, 0);
   const deliveryCharge = deliveryOptions.find((option) => option.district === district)?.deliveryCharge ?? "0.00";
   const total = (subtotal + Number(deliveryCharge)).toFixed(2);
@@ -31,19 +44,22 @@ export default function CheckoutPage() {
     setError("");
     const form = new FormData(event.currentTarget);
     try {
+      const fields = {
+        customerName: form.get("customerName"),
+        email: form.get("email"),
+        phone: form.get("phone"),
+        deliveryAddress: form.get("deliveryAddress"),
+        district: form.get("district"),
+        postcode: form.get("postcode"),
+        customerNote: form.get("customerNote"),
+        items: lines.map(({ variantId, quantity }) => ({ variantId, quantity })),
+        paymentMethod,
+      };
+      const attempt = paymentMethod === "STRIPE" ? preparePaymentAttempt(fields, fields.items) : null;
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          customerName: form.get("customerName"),
-          email: form.get("email"),
-          phone: form.get("phone"),
-          deliveryAddress: form.get("deliveryAddress"),
-          district: form.get("district"),
-          postcode: form.get("postcode"),
-          customerNote: form.get("customerNote"),
-          items: lines.map(({ variantId, quantity }) => ({ variantId, quantity })),
-        }),
+        body: JSON.stringify({ ...fields, ...(attempt ? { checkoutKey: attempt.key } : {}) }),
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
@@ -51,6 +67,18 @@ export default function CheckoutPage() {
         throw new Error(message);
       }
       const parsed = orderReceiptSchema.safeParse(body);
+      if (attempt) {
+        if (!parsed.success) throw new Error("Unable to validate the payment session. Your bag has not been cleared.");
+        savePaymentOrder(attempt, parsed.data.id);
+        if (parsed.data.checkoutUrl) {
+          const checkoutUrl = new URL(parsed.data.checkoutUrl);
+          if (checkoutUrl.protocol !== "https:" || checkoutUrl.hostname !== "checkout.stripe.com") throw new Error("Invalid payment destination");
+          window.location.assign(checkoutUrl.href);
+        } else {
+          router.push(`/order-placed?order=${encodeURIComponent(parsed.data.id)}&payment=stripe`);
+        }
+        return;
+      }
       if (!parsed.success) {
         clearCart();
         router.push("/order-placed?receipt=unavailable");
@@ -137,6 +165,17 @@ export default function CheckoutPage() {
               <Textarea name="customerNote" maxLength={1000} />
             </Label>
           </div>
+          <fieldset className="grid gap-3 border-t border-line pt-5">
+            <legend className="px-0 text-sm font-semibold">Payment</legend>
+            <label className="flex min-h-11 items-center gap-3 text-sm">
+              <input type="radio" name="paymentMethod" value="COD" checked={paymentMethod === "COD"} onChange={() => setPaymentMethod("COD")} className="h-4 w-4 accent-foreground" />
+              Cash on delivery
+            </label>
+            <label className={`flex min-h-11 items-center gap-3 text-sm ${stripeAvailable ? "" : "text-muted"}`}>
+              <input type="radio" name="paymentMethod" value="STRIPE" checked={paymentMethod === "STRIPE"} onChange={() => setPaymentMethod("STRIPE")} disabled={!stripeAvailable} className="h-4 w-4 accent-foreground" />
+              Stripe{stripeAvailable ? " (test mode)" : " (unavailable)"}
+            </label>
+          </fieldset>
           {error && (
             <p role="alert" className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">
               {error}
@@ -147,7 +186,7 @@ export default function CheckoutPage() {
               {deliveryOptionsError}
             </p>
           )}
-          <Button disabled={submitting || deliveryOptionsLoading || Boolean(deliveryOptionsError)}>{submitting ? "Submitting order..." : "Place order for review"}</Button>
+          <Button disabled={submitting || deliveryOptionsLoading || Boolean(deliveryOptionsError)}>{submitting ? "Submitting order..." : paymentMethod === "STRIPE" ? "Pay with Stripe" : "Place order for review"}</Button>
         </form>
         <aside className="grid gap-[14px] border-t border-foreground pt-[14px]">
           <h2 className="font-sans text-base font-semibold leading-normal">Order summary</h2>
@@ -171,7 +210,7 @@ export default function CheckoutPage() {
             <span>Grand total</span>
             <strong>{district ? money(total) : "Select a district"}</strong>
           </div>
-          <p className="text-[11px] text-muted">Your order is unpaid and remains pending until reviewed. Stock is reserved when submitted.</p>
+          <p className="text-[11px] text-muted">{paymentMethod === "STRIPE" ? "Test payment only. Your order is confirmed after payment is verified." : "Your order is unpaid and remains pending until reviewed. Stock is reserved when submitted."}</p>
         </aside>
       </div>
     </section>

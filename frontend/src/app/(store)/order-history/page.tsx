@@ -65,7 +65,11 @@ export default function OrderHistoryPage() {
           {contactType === "email" ? "Email address" : "Phone number"}
           <Input type={contactType === "email" ? "email" : "tel"} value={contact} onChange={(event) => setContact(event.target.value)} required maxLength={254} autoComplete={contactType === "email" ? "email" : "tel"} />
         </Label>
-        {error && <p role="alert" className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">{error}</p>}
+        {error && (
+          <p role="alert" className="rounded-[4px] border border-[#e4bfb4] bg-[#fff1ec] p-3 text-xs text-[#873723]">
+            {error}
+          </p>
+        )}
         <Button disabled={submitting}>{submitting ? "Looking up order..." : "Find order"}</Button>
       </form>
       {order && (
@@ -73,23 +77,42 @@ export default function OrderHistoryPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 className="font-sans text-lg">Order {order.id}</h2>
-              <p className="mt-1 text-xs text-muted">{new Date(order.createdAt).toLocaleString()} · {order.status.replaceAll("_", " ")}</p>
+              <p className="mt-1 text-xs text-muted">
+                {new Date(order.createdAt).toLocaleString()} · {order.status.replaceAll("_", " ")}
+              </p>
             </div>
-            <span className="text-xs">Delivery to: {order.district ?? (order.deliveryArea || "District not set")}{order.postcode ? ` · ${order.postcode}` : ""}</span>
+            <span className="text-xs">
+              Delivery to: {order.district ?? (order.deliveryArea || "District not set")}
+              {order.postcode ? ` · ${order.postcode}` : ""}
+            </span>
           </div>
           <p className="text-sm text-muted">{order.deliveryAddress}</p>
+          <p className="text-sm">
+            {order.paymentMethod === "STRIPE" ? "Stripe (test)" : "Cash on delivery"} · {order.paymentStatus.replaceAll("_", " ")}
+          </p>
           <div className="grid gap-3">
             {order.items.map((item) => (
               <div className="flex justify-between gap-4 text-sm" key={item.id}>
-                <span>{item.quantity} × {item.productName} · {item.variantName}</span>
+                <span>
+                  {item.quantity} × {item.productName} · {item.variantName}
+                </span>
                 <strong>{money(item.lineTotal)}</strong>
               </div>
             ))}
           </div>
           <div className="ml-auto grid w-full max-w-[320px] gap-3 border-t border-line pt-4 text-sm">
-            <div className="flex justify-between gap-4"><span>Item subtotal</span><strong>{money(order.subtotal)}</strong></div>
-            <div className="flex justify-between gap-4"><span>Delivery charge</span><strong>{money(order.deliveryCharge)}</strong></div>
-            <div className="flex justify-between gap-4 border-t border-line pt-3"><span>Grand total</span><strong>{money(order.total)}</strong></div>
+            <div className="flex justify-between gap-4">
+              <span>Item subtotal</span>
+              <strong>{money(order.subtotal)}</strong>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Delivery charge</span>
+              <strong>{money(order.deliveryCharge)}</strong>
+            </div>
+            <div className="flex justify-between gap-4 border-t border-line pt-3">
+              <span>Grand total</span>
+              <strong>{money(order.total)}</strong>
+            </div>
           </div>
         </section>
       )}

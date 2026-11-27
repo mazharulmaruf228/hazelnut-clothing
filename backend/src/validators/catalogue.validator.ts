@@ -79,12 +79,17 @@ export const variantPatch = variantInput
   .partial();
 export const createOrderInput = z
   .object({
+    paymentMethod: z.enum(["COD", "STRIPE"]).default("COD"),
+    checkoutKey: z.uuid().optional(),
     customerName: z.string().trim().min(1).max(120),
     email: z.email().max(254),
     phone: z.string().trim().min(7).max(30),
     deliveryAddress: z.string().trim().min(5).max(500),
     district: z.enum(bangladeshDistricts),
-    postcode: z.string().trim().regex(/^\d{4}$/, "Enter a four-digit Bangladesh postcode"),
+    postcode: z
+      .string()
+      .trim()
+      .regex(/^\d{4}$/, "Enter a four-digit Bangladesh postcode"),
     customerNote: z.string().trim().max(1000).default(""),
     items: z
       .array(z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(20) }).strict())
@@ -92,7 +97,9 @@ export const createOrderInput = z
       .max(20)
       .refine((items) => new Set(items.map((item) => item.variantId)).size === items.length, "Each variant can appear only once"),
   })
-  .strict();
+  .strict()
+  .refine((input) => input.paymentMethod !== "STRIPE" || Boolean(input.checkoutKey), "Stripe checkout requires a checkout key");
+export const cancelRefundInput = z.object({ notShipped: z.literal(true) }).strict();
 export const orderStatusInput = z.object({ status: z.enum(["CONFIRMED", "REJECTED"]) }).strict();
 export const orderEditInput = z
   .object({
@@ -103,7 +110,11 @@ export const orderEditInput = z
     deliveryAddress: z.string().trim().min(5).max(500),
     deliveryArea: z.string().trim().max(120),
     district: z.enum(bangladeshDistricts).nullable(),
-    postcode: z.string().trim().regex(/^\d{4}$/).nullable(),
+    postcode: z
+      .string()
+      .trim()
+      .regex(/^\d{4}$/)
+      .nullable(),
     customerNote: z.string().trim().max(1000),
     items: z
       .array(z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(20) }).strict())

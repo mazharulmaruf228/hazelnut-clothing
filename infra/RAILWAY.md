@@ -63,6 +63,21 @@ blocks deployment if they fail. Never use `prisma db push` in production.
 Set the **healthcheck path** to `/api/ready` and timeout to 120 seconds.
 Keep the API private; no public domain or TCP proxy is needed.
 
+## Stripe Sandbox Staging
+
+Keep production COD-only for now (`STRIPE_ENABLED=false`). In an isolated staging
+environment, set backend-only `STRIPE_SECRET_KEY` to a restricted sandbox key and
+`STRIPE_WEBHOOK_SECRET` to the signing secret for
+`WEB_URL/api/webhooks/stripe`, then set `STRIPE_ENABLED=true`. Do not add a Stripe
+secret or publishable key to `web`; hosted redirect Checkout needs neither there.
+Next forwards the public HTTPS webhook to the private API with its raw body.
+Follow the event subscriptions and test checklist in `backend/README.md`.
+
+Add a scheduled job using the API image and the same environment variables:
+`node dist/payments-reconcile.js`, every five minutes. Alert on nonzero exits and
+review payment discrepancies/refund failures. Disabling new Stripe checkout must
+not disable this job or the webhook. No live activation is included in this work.
+
 ## Web Settings
 
 | Variable                 | Value                                         |

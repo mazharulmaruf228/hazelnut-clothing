@@ -39,6 +39,18 @@ All containers log to bounded json-file logs. PostgreSQL uses a named persistent
 volume. PostgreSQL 18 persists at `/var/lib/postgresql`; do not change its major
 version without a dump/restore or a reviewed `pg_upgrade` procedure.
 
+## Stripe Sandbox Staging
+
+Production remains COD-only. For isolated sandbox staging, configure backend-only
+`STRIPE_ENABLED`, `STRIPE_SECRET_KEY` (restricted test key), and
+`STRIPE_WEBHOOK_SECRET`. Forward signed events to
+`https://YOUR_DOMAIN/api/webhooks/stripe`; see `backend/README.md` for required
+events and manual verification. Do not reserialize the webhook body at the proxy.
+Schedule `docker compose exec -T api node dist/payments-reconcile.js` every five
+minutes with external failure monitoring. Keep webhook and reconciliation active
+when new Stripe checkout is disabled. A separate live-eligibility review is
+required before handling real payments.
+
 ## CI/CD
 
 CI installs and tests each package separately; it runs real PostgreSQL integration

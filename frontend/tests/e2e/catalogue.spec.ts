@@ -31,7 +31,7 @@ async function selectRadixOption(page: Page, label: string, value: string) {
   await page.getByRole("combobox", { name: label }).click();
   await page.getByRole("option", { name: value, exact: true }).click();
 }
-test("server-rendered catalogue matches the independent API contract", async ({ request }) => {
+test("catalogue preserves server SEO and loads product content through the browser API", async ({ request, page }) => {
   const api = await request.get("/api/products/everyday-oxford-shirt");
   expect(api.status()).toBe(200);
   const product = productSchema.parse(await api.json());
@@ -41,6 +41,60 @@ test("server-rendered catalogue matches the independent API contract", async ({ 
   expect(html).toContain("Everyday Oxford Shirt");
   expect(html).toContain("application/ld+json");
   expect(html).toContain("1701.00");
+  const browserResponse = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/products/${product.slug}`);
+  await page.goto(`/products/${product.slug}`);
+  expect((await browserResponse).status()).toBe(200);
+  await expect(page.getByRole("heading", { name: product.name, exact: true })).toBeVisible();
+  const missing = await request.get("/api/products/not-a-real-product");
+  expect(missing.status()).toBe(404);
+  await page.goto("/products/not-a-real-product");
+  await expect(page.getByRole("heading", { name: "This piece isn't here.", exact: true })).toBeVisible();
+});
+test("public catalogue API calls are browser-visible and matching revisits use RTK cache", async ({ page, request }) => {
+  const product = productSchema.parse(await (await request.get("/api/products/everyday-oxford-shirt")).json());
+  const calls: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && (url.pathname === "/api/categories" || url.pathname.startsWith("/api/products"))) calls.push(url.pathname + url.search);
+  });
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "Featured products" })).toBeVisible();
+  expect(calls).toEqual(["/api/products?featured=true"]);
+  await page.getByRole("link", { name: "The collection", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Clothing", exact: true })).toBeVisible();
+  await expect(page.locator("article")).not.toHaveCount(0);
+  expect(calls).toContain("/api/products");
+  expect(calls).toContain("/api/categories");
+  await page.locator(`article a[href="/products/${product.slug}"]`).last().click();
+  await expect(page.getByRole("heading", { name: product.name, exact: true, level: 1 })).toBeVisible();
+  expect(calls).toContain(`/api/products/${product.slug}`);
+  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: product.category.name }).click();
+  await expect(page.getByRole("heading", { name: product.category.name, exact: true, level: 1 })).toBeVisible();
+  await expect(page.locator("article")).not.toHaveCount(0);
+  expect(calls).toContain(`/api/products?category=${product.category.slug}`);
+  const count = calls.length;
+  await page.getByRole("link", { name: "The collection", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Clothing", exact: true })).toBeVisible();
+  await expect(page.locator("article")).not.toHaveCount(0);
+  expect(calls).toHaveLength(count);
+  await page.locator(`article a[href="/products/${product.slug}"]`).last().click();
+  await expect(page.getByRole("heading", { name: product.name, exact: true, level: 1 })).toBeVisible();
+  expect(calls).toHaveLength(count);
+});
+test("catalogue retry sends a new browser request after an API failure", async ({ page }) => {
+  let failed = true;
+  let requests = 0;
+  await page.route("**/api/products", async (route) => {
+    requests++;
+    if (failed) await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
+    else await route.continue();
+  });
+  await page.goto("/products");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("HTTP 503");
+  failed = false;
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.locator("article")).not.toHaveCount(0);
+  expect(requests).toBe(2);
 });
 test("browse, search, choose variants and inspect real images", async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -63,7 +117,12 @@ test("browse, search, choose variants and inspect real images", async ({ page },
   await capturePaintedPage(page, testInfo.outputPath("storefront.png"));
   await page.getByRole("link", { name: "The collection", exact: true }).click();
   await page.getByRole("searchbox", { name: "Search products" }).fill("Oxford");
+  const searchResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/products" && url.searchParams.get("q") === "Oxford";
+  });
   await page.getByRole("button", { name: "Apply search and sort" }).click();
+  expect((await searchResponse).status()).toBe(200);
   await expect(page.locator("article")).toHaveCount(1);
   await page.locator("article a").last().click();
   await expect(page.getByRole("heading", { name: "Everyday Oxford Shirt", exact: true })).toBeVisible();

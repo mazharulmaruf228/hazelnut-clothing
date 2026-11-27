@@ -60,30 +60,70 @@ paths:
       summary: Categories with published products or published descendants
       responses:
         "200": { description: Category items, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Category" } } } } } } }
-  /orders:
+  /orders/delivery-options:
     get:
       tags: [Orders]
       summary: Static Bangladesh district delivery options and rates
       responses:
         "200": { description: Districts with Tk 80 Dhaka / Tk 100 non-Dhaka charges }
+  /orders/payment-methods:
+    get:
+      tags: [Orders]
+      summary: Enabled checkout methods; Stripe is sandbox-only
+      responses:
+        "200":
+          description: COD always available; STRIPE available only when configured and enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, stripeTestMode]
+                properties:
+                  items: { type: array, items: { type: string, enum: [COD, STRIPE] } }
+                  stripeTestMode: { type: boolean, const: true }
+  /orders/{id}/payment:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Orders]
+      summary: Minimal payment receipt without customer details
+      description: Requires the original random checkoutKey as a Bearer token. Never accepts browser payment claims. Limited to 90 requests per IP per minute.
+      security: [{ guestPaymentToken: [] }]
+      responses:
+        "200": { description: Current verified payment state, content: { application/json: { schema: { $ref: "#/components/schemas/OrderReceipt" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /webhooks/stripe:
     post:
       tags: [Orders]
-      summary: Place an unpaid guest order and reserve stock for manual review
-      description: Server recalculates current prices and delivery charge from the selected district and accepts no client-supplied prices or fees. Limited to 10 attempts per IP per 15 minutes.
+      summary: Stripe sandbox webhook with raw-body signature verification
+      description: Handles Checkout completion, expiry, asynchronous success/failure, and refund lifecycle. No browser auth or CSRF; signature and sandbox mode are mandatory. Duplicate events are safe; transient failures return non-2xx for retry.
+      parameters: [{ name: stripe-signature, in: header, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: Event handled or safely ignored }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /orders:
+    post:
+      tags: [Orders]
+      summary: Reserve stock for COD review or Stripe-hosted sandbox Checkout
+      description: Server recalculates current prices and district delivery charge; no client-supplied prices or fees. COD defaults to pending review. STRIPE requires checkoutKey; identical requests reuse one order/session, changed inputs conflict. Stripe amounts/items are immutable. Verified paid webhooks auto-confirm. Limited to 10 attempts per IP per 15 minutes.
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/CreateOrder" }
       responses:
-        "201":
-          {
-            description: Pending-review order created,
-            content: { application/json: { schema: { type: object, required: [id, status, subtotal, deliveryCharge, total], properties: { id: { type: string, format: uuid }, status: { type: string, const: PENDING_REVIEW }, subtotal: { $ref: "#/components/schemas/Money" }, deliveryCharge: { $ref: "#/components/schemas/Money" }, total: { $ref: "#/components/schemas/Money" } } } } },
-          }
+        "201": { description: Order receipt; pending Stripe orders include checkoutUrl, content: { application/json: { schema: { $ref: "#/components/schemas/OrderReceipt" } } } }
         "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /orders/lookup:
     post:
       tags: [Orders]
@@ -95,7 +135,7 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/OrderLookup" }
       responses:
-        "200": { description: Matching order snapshot with item subtotal, delivery charge, and total, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "200": { description: "Matching order snapshot with item subtotal, delivery charge, and total", content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
@@ -191,11 +231,15 @@ paths:
       tags: [Orders]
       security: [{ adminCookie: [] }]
       responses:
-        "200": { description: Order snapshots, customer delivery details, item subtotals, delivery charges, grand totals, and current review states, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Order" } } } } } } }
+        "200":
+          {
+            description: "Order snapshots, customer delivery details, item subtotals, delivery charges, grand totals, and current payment/review states",
+            content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Order" } } } } } },
+          }
   /admin/orders/{id}:
     parameters: [{ $ref: "#/components/parameters/Id" }]
     patch:
-      summary: Edit a pending order's items and customer details
+      summary: Edit a pending COD order's items and customer details
       tags: [Orders]
       security: [{ adminCookie: [] }]
       parameters: [{ $ref: "#/components/parameters/Csrf" }]
@@ -215,7 +259,7 @@ paths:
       tags: [Orders]
       security: [{ adminCookie: [] }]
       parameters: [{ $ref: "#/components/parameters/Csrf" }]
-      description: Confirmation consumes reserved stock. Rejection releases it. Only pending orders can be reviewed.
+      description: Confirmation consumes reserved stock. Rejection releases it. Only pending COD orders can be reviewed; Stripe orders are confirmed by payment verification.
       requestBody:
         required: true
         content:
@@ -223,6 +267,24 @@ paths:
             schema: { type: object, additionalProperties: false, required: [status], properties: { status: { type: string, enum: [CONFIRMED, REJECTED] } } }
       responses:
         "200": { description: Updated order and item snapshots, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/orders/{id}/cancel-refund:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      summary: ADMIN-only cancellation and full refund of an unshipped Stripe order
+      tags: [Orders]
+      security: [{ adminCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Csrf" }]
+      description: Explicit notShipped attestation required. Cancels and restores stock once. Requests a full refund idempotently; refund may remain pending or failed. Reconciliation recovers provider failures. Repeating cancellation never restores stock twice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [notShipped], properties: { notShipped: { type: boolean, const: true } } }
+      responses:
+        "200": { description: Cancellation and current refund status, content: { application/json: { schema: { $ref: "#/components/schemas/OrderReceipt" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /admin/products:
     get:
@@ -448,6 +510,7 @@ paths:
 components:
   securitySchemes:
     adminCookie: { type: apiKey, in: cookie, name: access, description: Short-lived JWT; refresh is an independently rotated HttpOnly cookie }
+    guestPaymentToken: { type: http, scheme: bearer, description: Original random guest checkoutKey; only its SHA-256 hash is stored }
   parameters:
     Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     Csrf: { name: x-csrf-token, in: header, required: true, schema: { type: string }, description: Must match CSRF cookie; exact trusted Origin also required }
@@ -533,7 +596,73 @@ components:
         totalPages: { type: integer }
     BangladeshDistrict:
       type: string
-      enum: [Bagerhat, Bandarban, Barguna, Barishal, Bhola, Bogura, Brahmanbaria, Chandpur, Chattogram, Chuadanga, "Cox's Bazar", Cumilla, Dhaka, Dinajpur, Faridpur, Feni, Gaibandha, Gazipur, Gopalganj, Habiganj, Jamalpur, Jashore, Jhalokati, Jhenaidah, Joypurhat, Khagrachhari, Khulna, Kishoreganj, Kurigram, Kushtia, Lakshmipur, Lalmonirhat, Madaripur, Magura, Manikganj, Meherpur, Moulvibazar, Munshiganj, Mymensingh, Naogaon, Narail, Narayanganj, Narsingdi, Natore, Netrokona, Nilphamari, Noakhali, Pabna, Panchagarh, Patuakhali, Pirojpur, Rajbari, Rajshahi, Rangamati, Rangpur, Satkhira, Shariatpur, Sherpur, Sirajganj, Sunamganj, Sylhet, Tangail, Thakurgaon, Chapainawabganj]
+      enum:
+        [
+          Bagerhat,
+          Bandarban,
+          Barguna,
+          Barishal,
+          Bhola,
+          Bogura,
+          Brahmanbaria,
+          Chandpur,
+          Chattogram,
+          Chuadanga,
+          "Cox's Bazar",
+          Cumilla,
+          Dhaka,
+          Dinajpur,
+          Faridpur,
+          Feni,
+          Gaibandha,
+          Gazipur,
+          Gopalganj,
+          Habiganj,
+          Jamalpur,
+          Jashore,
+          Jhalokati,
+          Jhenaidah,
+          Joypurhat,
+          Khagrachhari,
+          Khulna,
+          Kishoreganj,
+          Kurigram,
+          Kushtia,
+          Lakshmipur,
+          Lalmonirhat,
+          Madaripur,
+          Magura,
+          Manikganj,
+          Meherpur,
+          Moulvibazar,
+          Munshiganj,
+          Mymensingh,
+          Naogaon,
+          Narail,
+          Narayanganj,
+          Narsingdi,
+          Natore,
+          Netrokona,
+          Nilphamari,
+          Noakhali,
+          Pabna,
+          Panchagarh,
+          Patuakhali,
+          Pirojpur,
+          Rajbari,
+          Rajshahi,
+          Rangamati,
+          Rangpur,
+          Satkhira,
+          Shariatpur,
+          Sherpur,
+          Sirajganj,
+          Sunamganj,
+          Sylhet,
+          Tangail,
+          Thakurgaon,
+          Chapainawabganj,
+        ]
     OrderLookup:
       type: object
       additionalProperties: false
@@ -549,7 +678,12 @@ components:
       type: object
       additionalProperties: false
       required: [customerName, email, phone, deliveryAddress, district, postcode, items]
+      allOf:
+        - if: { required: [paymentMethod], properties: { paymentMethod: { const: STRIPE } } }
+          then: { required: [checkoutKey] }
       properties:
+        paymentMethod: { type: string, enum: [COD, STRIPE], default: COD }
+        checkoutKey: { type: string, format: uuid, description: Stable crypto-random UUID for one Stripe checkout attempt; also the guest payment receipt token }
         customerName: { type: string, minLength: 1, maxLength: 120 }
         email: { type: string, format: email, maxLength: 254 }
         phone: { type: string, minLength: 7, maxLength: 30 }
@@ -568,12 +702,31 @@ components:
             properties:
               variantId: { type: string, format: uuid }
               quantity: { type: integer, minimum: 1, maximum: 20 }
+    OrderStatus: { type: string, enum: [PENDING_REVIEW, CONFIRMED, REJECTED, PENDING_PAYMENT, PAYMENT_EXPIRED, CANCELLED] }
+    PaymentStatus: { type: string, enum: [UNPAID, PENDING, PAID, REFUND_PENDING, REFUND_FAILED, REFUNDED] }
+    OrderReceipt:
+      type: object
+      required: [id, status, paymentMethod, paymentStatus, currency, subtotal, deliveryCharge, total]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        paymentMethod: { type: string, enum: [COD, STRIPE] }
+        paymentStatus: { $ref: "#/components/schemas/PaymentStatus" }
+        currency: { type: string, const: bdt }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        deliveryCharge: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        checkoutUrl: { type: [string, "null"], format: uri }
     Order:
       type: object
       required: [id, status, customerName, email, phone, deliveryAddress, deliveryArea, district, postcode, customerNote, subtotal, deliveryCharge, total, items, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
-        status: { type: string, enum: [PENDING_REVIEW, CONFIRMED, REJECTED] }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        paymentMethod: { type: string, enum: [COD, STRIPE] }
+        paymentStatus: { $ref: "#/components/schemas/PaymentStatus" }
+        currency: { type: string, const: bdt }
+        paymentReviewRequired: { type: boolean }
         customerName: { type: string }
         email: { type: string, format: email }
         phone: { type: string }

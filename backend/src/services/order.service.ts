@@ -7,13 +7,18 @@ import { effectivePrice } from "../utils/money.ts";
 import { deliveryChargeFor, deliveryOptions } from "../utils/delivery.ts";
 import type { createOrderInput, orderEditInput } from "../validators/catalogue.validator.ts";
 import type { orderLookupInput } from "../validators/catalogue.validator.ts";
+import { paymentModel } from "../models/payment.model.ts";
+import { checkoutInputHash, paymentHash } from "../utils/payment.ts";
+import { orderReceipt } from "../utils/order-receipt.ts";
+import { beginStripeCheckout, requireStripeCheckout } from "./payment.service.ts";
 
 type CreateOrderInput = z.infer<typeof createOrderInput>;
 type OrderEditInput = z.infer<typeof orderEditInput>;
 
 function orderDto(order: Awaited<ReturnType<typeof orderModel.findById>>) {
+  const { checkoutKeyHash: _key, checkoutInputHash: _input, stripeCheckoutUrl: _url, stripeSessionId: _session, stripePaymentIntentId: _intent, stripeRefundId: _refund, refundAttempt: _attempt, ...visible } = order;
   return {
-    ...order,
+    ...visible,
     subtotal: order.subtotal.toFixed(2),
     deliveryCharge: order.deliveryCharge.toFixed(2),
     total: order.subtotal.add(order.deliveryCharge).toFixed(2),
@@ -22,7 +27,17 @@ function orderDto(order: Awaited<ReturnType<typeof orderModel.findById>>) {
 }
 
 export async function createOrder(input: CreateOrderInput) {
-  return write(async (client) => {
+  if (input.paymentMethod === "STRIPE") requireStripeCheckout();
+  const order = await write(async (client) => {
+    const checkoutKeyHash = input.paymentMethod === "STRIPE" ? paymentHash(input.checkoutKey!) : null;
+    const inputHash = checkoutInputHash(input);
+    if (checkoutKeyHash) {
+      const previous = await paymentModel.findByKey(checkoutKeyHash, client);
+      if (previous) {
+        if (previous.checkoutInputHash !== inputHash) throw new HttpError(409, "Checkout details changed. Start a new checkout.");
+        return previous;
+      }
+    }
     const variants = await client.productVariant.findMany({
       where: { id: { in: input.items.map((item) => item.variantId) } },
       include: { product: true },
@@ -53,8 +68,14 @@ export async function createOrder(input: CreateOrderInput) {
       await client.productVariant.update({ where: { id: variant.id }, data: { stockReserved: { increment: requested.quantity } } });
     }
 
-    const order = await orderModel.create(
+    return orderModel.create(
       {
+        paymentMethod: input.paymentMethod,
+        paymentStatus: input.paymentMethod === "STRIPE" ? "PENDING" : "UNPAID",
+        status: input.paymentMethod === "STRIPE" ? "PENDING_PAYMENT" : "PENDING_REVIEW",
+        checkoutKeyHash,
+        checkoutInputHash: checkoutKeyHash ? inputHash : null,
+        paymentExpiresAt: checkoutKeyHash ? new Date(Date.now() + 60 * 60_000) : null,
         customerName: input.customerName,
         email: input.email,
         phone: input.phone,
@@ -68,14 +89,8 @@ export async function createOrder(input: CreateOrderInput) {
       },
       client,
     );
-    return {
-      id: order.id,
-      status: order.status,
-      subtotal: order.subtotal.toFixed(2),
-      deliveryCharge: order.deliveryCharge.toFixed(2),
-      total: order.subtotal.add(order.deliveryCharge).toFixed(2),
-    };
   });
+  return order.paymentMethod === "STRIPE" ? beginStripeCheckout(order) : orderReceipt(order);
 }
 
 export async function listOrders() {
@@ -95,7 +110,7 @@ export async function lookupGuestOrder(input: z.infer<typeof orderLookupInput>) 
 export async function editOrder(id: string, input: OrderEditInput) {
   return write(async (client) => {
     const order = await orderModel.findById(id, client);
-    if (order.status !== "PENDING_REVIEW") throw new HttpError(409, "Only pending orders can be edited");
+    if (order.status !== "PENDING_REVIEW" || order.paymentMethod !== "COD") throw new HttpError(409, "Only pending COD orders can be edited");
     if (order.updatedAt.getTime() !== new Date(input.updatedAt).getTime()) throw new HttpError(409, "This order changed since it was opened. Reload and try again.");
 
     const previousItems = order.items.map((item) => ({ variantId: item.variantId, quantity: item.quantity })).sort((first, second) => (first.variantId ?? "").localeCompare(second.variantId ?? ""));
@@ -182,6 +197,7 @@ export async function editOrder(id: string, input: OrderEditInput) {
 export async function updateOrderStatus(id: string, status: "CONFIRMED" | "REJECTED") {
   return write(async (client) => {
     const order = await orderModel.findById(id, client);
+    if (order.paymentMethod !== "COD") throw new HttpError(409, "Stripe orders are confirmed by verified payment");
     if (order.status === status) return orderDto(order);
     if (order.status !== "PENDING_REVIEW") throw new HttpError(409, "Only pending orders can be reviewed");
 

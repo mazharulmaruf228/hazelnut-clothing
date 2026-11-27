@@ -30,3 +30,9 @@ export const orderLookupLimit = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
 });
+export const paymentStatusLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 90,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});

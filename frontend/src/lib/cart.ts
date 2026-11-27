@@ -21,8 +21,9 @@ export type CartLine = {
 function readCart(): CartLine[] {
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(storageKey) || "[]");
-    if (!Array.isArray(stored)) return [];
-    return stored.filter(
+    const lines = Array.isArray(stored) ? stored : typeof stored === "object" && stored !== null && "lines" in stored ? stored.lines : [];
+    if (!Array.isArray(lines)) return [];
+    return lines.filter(
       (line): line is CartLine =>
         !!line &&
         typeof line.variantId === "string" &&
@@ -43,9 +44,29 @@ function readCart(): CartLine[] {
   }
 }
 
-function saveCart(lines: CartLine[]) {
-  localStorage.setItem(storageKey, JSON.stringify(lines));
+function settledOrders(): string[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    return Array.isArray(stored.settledOrders) ? stored.settledOrders.filter((id: unknown) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCart(lines: CartLine[], settled = settledOrders()) {
+  localStorage.setItem(storageKey, JSON.stringify(settled.length ? { lines, settledOrders: settled } : lines));
   window.dispatchEvent(new Event(changeEvent));
+}
+
+export function settlePaidCart(orderId: string, purchased: { variantId: string; quantity: number }[]) {
+  const settled = settledOrders();
+  if (settled.includes(orderId)) return;
+  const quantities = new Map(purchased.map((line) => [line.variantId, line.quantity]));
+  const remaining = readCart().flatMap((line) => {
+    const quantity = line.quantity - (quantities.get(line.variantId) ?? 0);
+    return quantity > 0 ? [{ ...line, quantity }] : [];
+  });
+  saveCart(remaining, [...settled, orderId]);
 }
 
 export function addCartLine(line: CartLine) {

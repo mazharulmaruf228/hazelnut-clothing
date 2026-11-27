@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useChangeMutation, useOrdersQuery, useProductsQuery } from "@/store/api";
+import { Check, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { useChangeMutation, useMeQuery, useOrdersQuery, useProductsQuery } from "@/store/api";
 import { Button } from "@/components/ui/button";
 import { Confirm } from "@/components/ui/confirm";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -211,6 +211,7 @@ function OrderEditor({ order, close }: { order: Order; close: () => void }) {
 
 export default function OrdersPage() {
   const { data, isFetching, error, refetch } = useOrdersQuery();
+  const { data: session } = useMeQuery();
   const [change, { isLoading }] = useChangeMutation();
   const [actionError, setActionError] = useState("");
   const [editingOrder, setEditingOrder] = useState<Order>();
@@ -250,6 +251,7 @@ export default function OrdersPage() {
               <TableHead>Delivery charge</TableHead>
               <TableHead>Grand total</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Payment</TableHead>
               <TableHead>Review</TableHead>
             </TableRow>
           </TableHeader>
@@ -293,7 +295,12 @@ export default function OrdersPage() {
                   </span>
                 </TableCell>
                 <TableCell>
-                  {order.status === "PENDING_REVIEW" ? (
+                  <span className="block whitespace-nowrap text-xs">{order.paymentMethod === "STRIPE" ? "Stripe (test)" : "Cash on delivery"}</span>
+                  <small className="mt-1 block whitespace-nowrap text-[10px] text-muted">{order.paymentStatus.replaceAll("_", " ")}</small>
+                  {order.paymentReviewRequired && <small className="mt-1 block text-[10px] text-destructive">Payment requires investigation</small>}
+                </TableCell>
+                <TableCell>
+                  {order.status === "PENDING_REVIEW" && order.paymentMethod === "COD" ? (
                     <div className="flex items-center gap-[3px] whitespace-nowrap">
                       <Button className="!h-8 !min-h-8 !w-8" variant="ghost" size="icon" title="Edit order" aria-label={`Edit order for ${order.customerName}`} onClick={() => setEditingOrder(order)}>
                         <Pencil size={15} />
@@ -312,6 +319,17 @@ export default function OrdersPage() {
                         }
                       />
                     </div>
+                  ) : order.paymentMethod === "STRIPE" && session?.user.role === "ADMIN" && (order.status === "CONFIRMED" || (order.status === "CANCELLED" && order.paymentStatus === "REFUND_FAILED")) ? (
+                    <Confirm
+                      title={order.status === "CANCELLED" ? "Retry full refund?" : "Cancel and refund this unshipped order?"}
+                      description="By confirming, you attest this order has not shipped. The order will be cancelled and its stock restored once. A full Stripe refund will be requested; processing may remain pending."
+                      onConfirm={() => change({ url: `/admin/orders/${order.id}/cancel-refund`, method: "POST", body: { notShipped: true } }).unwrap()}
+                      trigger={
+                        <Button variant="ghost" size="icon" title="Cancel and refund unshipped order" aria-label="Cancel and refund unshipped order" disabled={isLoading}>
+                          <RotateCcw size={16} />
+                        </Button>
+                      }
+                    />
                   ) : (
                     "-"
                   )}

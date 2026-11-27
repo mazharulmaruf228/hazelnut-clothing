@@ -51,6 +51,23 @@ If ports are occupied, change `PORT`/`API_INTERNAL_URL`/`PUBLIC_ORIGIN` together
 Frontend and API use same-origin `/api` requests through Next rewrites in development
 and Caddy in production. PostgreSQL is never accessed by the frontend.
 
+Public catalogue views (homepage, product/category listings, and product details)
+fetch JSON in the browser through the existing RTK Query store. In browser
+DevTools, filter Network by Fetch/XHR or `/api/` to inspect `/api/products`,
+`/api/categories`, and `/api/products/:slug`, their query parameters and responses.
+Matching queries reuse the RTK Query cache; unused entries remain for 60 seconds.
+Cached revisits may make no request, while **Try again** explicitly refetches
+failed queries. A full reload creates a fresh in-memory cache.
+
+Next.js still fetches data on the server for metadata, structured product data,
+server-side product/category not-found handling, and sitemap generation. These requests do not appear
+in browser Network and are separate from the browser cache. `?_rsc=...` requests
+are Next.js page navigation/prefetch traffic, not backend catalogue API calls.
+HTTP/network failures and invalid API responses are reported separately in the
+catalogue UI; existing cached data remains visible if a background refresh fails.
+Existing Next.js streaming behavior is preserved: a missing-page view can have
+HTTP 200 after streaming starts, while a missing backend API resource returns 404.
+
 For mobile testing through an ngrok tunnel to port 3000, set
 `NEXT_PUBLIC_SITE_URL` in the frontend's local `.env` to the tunnel's HTTPS URL.
 Next.js allows that hostname for development connections; without it, the page

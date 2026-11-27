@@ -18,9 +18,21 @@ export const config = z
     CLOUDINARY_CLOUD_NAME: z.string().default(""),
     CLOUDINARY_API_KEY: z.string().default(""),
     CLOUDINARY_API_SECRET: z.string().default(""),
+    STRIPE_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+    STRIPE_SECRET_KEY: z.string().default(""),
+    STRIPE_WEBHOOK_SECRET: z.string().default(""),
   })
   .parse(process.env);
 if (production && (!process.env.DATABASE_URL || !process.env.PUBLIC_ORIGIN || !config.PUBLIC_ORIGIN.startsWith("https://"))) {
   throw new Error("Production requires DATABASE_URL and an HTTPS PUBLIC_ORIGIN");
 }
 export const secureCookies = production;
+if (config.STRIPE_SECRET_KEY && !/^[sr]k_test_/.test(config.STRIPE_SECRET_KEY)) {
+  throw new Error("This integration only accepts Stripe sandbox/test keys");
+}
+if (config.STRIPE_ENABLED && (!config.STRIPE_SECRET_KEY || !config.STRIPE_WEBHOOK_SECRET.startsWith("whsec_"))) {
+  throw new Error("Stripe requires a sandbox API key and webhook signing secret");
+}

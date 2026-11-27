@@ -1,5 +1,22 @@
 import { createApi, fetchBaseQuery, type BaseQueryFn, type FetchArgs, type FetchBaseQueryError } from "@reduxjs/toolkit/query/react";
 import type { AdminUser, Product, ProductList, Category } from "@/schemas/api";
+import { categoryListSchema, productListSchema, productSchema } from "@/schemas/api";
+
+export type CatalogueParams = {
+  q?: string;
+  category?: string;
+  sort?: string;
+  page?: string;
+  featured?: string;
+};
+
+export function catalogueQueryString(params: CatalogueParams) {
+  const query = new URLSearchParams();
+  for (const key of ["q", "category", "sort", "page", "featured"] as const) {
+    if (params[key]) query.set(key, params[key]);
+  }
+  return query.toString();
+}
 
 let csrfToken: string | undefined;
 let csrfRequest: Promise<string> | undefined;
@@ -60,8 +77,31 @@ const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
 export const catalogueApi = createApi({
   reducerPath: "catalogueApi",
   baseQuery,
+  catchSchemaFailure: (): FetchBaseQueryError => ({
+    status: "CUSTOM_ERROR",
+    error: "The catalogue API returned an invalid response.",
+  }),
   tagTypes: ["Catalogue", "Users", "Session", "Orders"],
   endpoints: (builder) => ({
+    publicProducts: builder.query<ProductList, CatalogueParams>({
+      query: (params) => {
+        const query = catalogueQueryString(params);
+        return `/products${query ? `?${query}` : ""}`;
+      },
+      serializeQueryArgs: ({ endpointName, queryArgs }) => `${endpointName}?${catalogueQueryString(queryArgs)}`,
+      rawResponseSchema: productListSchema,
+      providesTags: ["Catalogue"],
+    }),
+    publicCategories: builder.query<{ items: Category[] }, void>({
+      query: () => "/categories",
+      responseSchema: categoryListSchema,
+      providesTags: ["Catalogue"],
+    }),
+    publicProduct: builder.query<Product, string>({
+      query: (slug) => `/products/${encodeURIComponent(slug)}`,
+      rawResponseSchema: productSchema,
+      providesTags: ["Catalogue"],
+    }),
     me: builder.query<{ user: AdminUser }, void>({
       query: () => "/auth/me",
       providesTags: ["Session"],
@@ -106,3 +146,4 @@ export const catalogueApi = createApi({
   }),
 });
 export const { useMeQuery, useLoginMutation, useLogoutMutation, useOverviewQuery, useProductsQuery, useProductQuery, useCategoriesQuery, useUsersQuery, useOrdersQuery, useChangeMutation, useUploadMutation } = catalogueApi;
+export const { usePublicProductsQuery, usePublicCategoriesQuery, usePublicProductQuery } = catalogueApi;

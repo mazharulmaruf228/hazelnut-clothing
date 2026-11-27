@@ -1,39 +1,34 @@
+"use client";
+
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, SlidersHorizontal, RotateCcw } from "lucide-react";
-import { getCategories, getProducts } from "@/services/server-api";
+import { ArrowLeft, ArrowRight, SlidersHorizontal } from "lucide-react";
+import { catalogueQueryString, usePublicCategoriesQuery, usePublicProductsQuery } from "@/store/api";
+import type { CatalogueParams } from "@/store/api";
 import { ProductCard } from "./product-card";
-import { Button } from "@/components/ui/button";
 import { CatalogueToolbar } from "./catalogue-toolbar";
 import { FeaturedCarousel } from "./featured-carousel";
+import { CatalogueError, CatalogueLoading } from "./catalogue-status";
 
-export type CatalogueParams = {
-  q?: string;
-  category?: string;
-  sort?: string;
-  page?: string;
-  featured?: string;
-};
-export async function Catalogue({ params, featuredCarousel = false }: { params: CatalogueParams; featuredCarousel?: boolean }) {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) if (value) query.set(key, value);
-  let result;
-  try {
-    result = await Promise.all([getProducts(query.toString()), getCategories()]);
-  } catch {
-    return (
-      <section className="catalogue-unavailable grid min-h-[250px] place-items-center px-5 py-20 text-center">
-        <h2>The collection will be back shortly.</h2>
-        <p>We couldn&apos;t reach the catalogue. Please try again in a moment.</p>
-        <Button asChild variant="outline">
-          <Link href="/products">
-            <RotateCcw size={16} /> Try again
-          </Link>
-        </Button>
-      </section>
-    );
+export type { CatalogueParams } from "@/store/api";
+
+export function Catalogue({ params, featuredCarousel = false }: { params: CatalogueParams; featuredCarousel?: boolean }) {
+  const productsQuery = usePublicProductsQuery(params);
+  const categoriesQuery = usePublicCategoriesQuery(undefined, { skip: featuredCarousel });
+  const products = productsQuery.currentData;
+  const categories = categoriesQuery.currentData;
+  const error = productsQuery.error || (!featuredCarousel ? categoriesQuery.error : undefined);
+  const updating = productsQuery.isFetching || (!featuredCarousel && categoriesQuery.isFetching);
+  function retry() {
+    if (productsQuery.error) void productsQuery.refetch();
+    if (!featuredCarousel && categoriesQuery.error) void categoriesQuery.refetch();
   }
-  const [products, categories] = result;
-  if (featuredCarousel) return <FeaturedCarousel products={products.items} />;
+  const feedback = error ? <CatalogueError error={error} retry={retry} updating={updating} /> : updating ? <p role="status" className="px-5 py-3 text-center">Updating the collection...</p> : null;
+  if (!products || (!featuredCarousel && !categories)) {
+    return error ? feedback : <CatalogueLoading />;
+  }
+  if (featuredCarousel) return <>{feedback}<FeaturedCarousel products={products.items} /></>;
+  if (!categories) return <CatalogueLoading />;
+  const query = new URLSearchParams(catalogueQueryString(params));
   const link = (changes: Record<string, string>) => {
     const next = new URLSearchParams(query);
     for (const [key, value] of Object.entries(changes)) {
@@ -44,7 +39,8 @@ export async function Catalogue({ params, featuredCarousel = false }: { params: 
   };
   const selected = categories.items.find((category) => category.slug === params.category);
   return (
-    <section className="mx-auto max-w-[1500px] px-[5%] pt-[38px] pb-[65px] max-[700px]:pt-[27px] max-[700px]:pb-10" id="collection">
+    <section className="mx-auto max-w-[1500px] px-[5%] pt-[38px] pb-[65px] max-[700px]:pt-[27px] max-[700px]:pb-10" id="collection" aria-busy={updating}>
+      {feedback}
       <div className="mb-7 flex items-end justify-between border-b border-line pb-6 max-[700px]:mb-[18px] max-[700px]:pb-[18px]">
         <div>
           <h2 className="mt-[7px]">{selected?.name || "The collection"}</h2>
